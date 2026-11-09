@@ -59,3 +59,9 @@ fi
 echo
 echo ">> built $HERE/mydma.ko"
 modinfo "$HERE/mydma.ko" 2>/dev/null | grep -E '^(vermagic|alias)' || true
+
+# 5. compile_commands.json for clangd, from the flags kbuild just used.
+#    Points into $KDIR, so it stays valid as long as that tree exists.
+python3 -W ignore "$KDIR/scripts/clang-tools/gen_compile_commands.py" \
+	-d "$KDIR" -o "$HERE/compile_commands.json" "$HERE"
+echo ">> wrote $HERE/compile_commands.json"

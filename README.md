@@ -64,6 +64,19 @@ make -C app               # -> app/dmatest (static ARM64)
 GitHub Actions runs the same three steps on every push. The board files are in
 the run's `kv260-board-files` artifact.
 
+### Editor setup (clangd)
+
+`driver/build.sh` writes `driver/compile_commands.json` after each build
+(it points into `~/kv260-kernel`, so keep that tree), and
+`make -C app compile_commands` writes one for `app/`. The repo's `.clangd`
+strips the kernel's GCC-only flags that would otherwise make clang give up.
+Run clangd inside WSL (VS Code: "WSL: Connect to WSL"), and point it at the
+cross compiler so C++ files use the ARM64 headers:
+
+```json
+"clangd.arguments": ["--query-driver=/usr/bin/aarch64-linux-gnu-*"]
+```
+
 ## Deploy and test on the board
 
 ```bash

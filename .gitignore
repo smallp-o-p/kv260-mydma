@@ -18,3 +18,7 @@ modules.order
 
 # User-space binaries
 /app/dmatest
+
+# clangd
+compile_commands.json
+.cache/

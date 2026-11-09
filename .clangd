@@ -1,0 +1,25 @@
+# clangd settings. clangd reads the real compile flags from compile_commands.json
+# (run `make -C driver compile_commands` and `make -C app compile_commands`).
+# The kernel is built with GCC, and a few of its flags make clang give up on the
+# file entirely; strip them here. Nothing about the actual build changes.
+CompileFlags:
+  Remove:
+    - -mabi=*
+    - -fno-allow-store-data-races
+    - -fconserve-stack
+    - -mstack-protector-guard*
+    - -fno-stack-clash-protection
+    - -mbranch-protection=*
+    - -Wa,*
+    - -fzero-call-used-regs=*
+    - -mrecord-mcount
+    - -fmin-function-alignment=*
+  Add:
+    - -Wno-unknown-warning-option
+    - -Wno-unused-command-line-argument
+
+Diagnostics:
+  # Kernel headers trip a handful of clang-only warnings; these are noise here.
+  Suppress:
+    - -Wgnu-variable-sized-type-not-at-end
+    - -Waddress-of-packed-member

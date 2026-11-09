@@ -14,7 +14,20 @@ all: dmatest
 dmatest: dmatest.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
 
-clean:
-	rm -f dmatest
+# For clangd: one entry per source, with the exact cross-compile command.
+compile_commands.json: Makefile
+	@printf '[\n' > $@
+	@first=1; for f in $(wildcard *.cpp); do \
+	  [ $$first = 1 ] || printf ',\n' >> $@; first=0; \
+	  printf '  {"directory": "%s", "file": "%s", "command": "%s %s -c %s"}' \
+	    "$(CURDIR)" "$(CURDIR)/$$f" "$(shell command -v $(CXX))" "$(CXXFLAGS)" "$$f" >> $@; \
+	done
+	@printf '\n]\n' >> $@
+	@echo ">> wrote $(CURDIR)/$@"
 
-.PHONY: all clean
+compile_commands: compile_commands.json
+
+clean:
+	rm -f dmatest compile_commands.json
+
+.PHONY: all clean compile_commands
