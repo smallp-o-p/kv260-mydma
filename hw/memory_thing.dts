@@ -1,0 +1,95 @@
+// Device tree overlay for the memory_thing PL design on the KV260
+// (PetaLinux 2022.2). Loaded by `xmutil loadapp memory_thing`.
+//
+// Compile on the board:  dtc -@ -I dts -O dtb -o memory_thing.dtbo memory_thing.dts
+//
+// DMA values come from the XSCT-generated memory_thing.dtsi for this design
+// (scatter-gather on, 26-bit length register, 32-bit streams).
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* Fragment 0: program the PL with the bitstream in this app's folder. */
+	fragment@0 {
+		target = <&fpga_full>;
+		__overlay__ {
+			#address-cells = <2>;
+			#size-cells = <2>;
+			firmware-name = "memory_thing.bit.bin";
+			resets = <&zynqmp_reset 116>, <&zynqmp_reset 117>,
+				 <&zynqmp_reset 118>, <&zynqmp_reset 119>;
+		};
+	};
+
+	/* Fragment 1: describe what is in the PL, under the PS's AXI bus. */
+	fragment@1 {
+		target = <&amba>;
+		__overlay__ {
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			/*
+			 * PL clock 0 (pl_clk0), which drives the DMA. Set this to the
+			 * frequency configured for pl_clk0 in your Vivado design.
+			 */
+			clocking0: clocking0 {
+				compatible = "xlnx,fclk";
+				#clock-cells = <0>;
+				clocks = <&zynqmp_clk 71>;
+				clock-output-names = "fabric_clk";
+				assigned-clocks = <&zynqmp_clk 71>;
+				assigned-clock-rates = <99999001>;	/* ~100 MHz */
+			};
+
+			/*
+			 * PS-PL AXI port widths. 0 = 128-bit (Vivado's default for the
+			 * HP ports), 1 = 64-bit, 2 = 32-bit. Pairs are <register value>;
+			 * if you changed the width of the HP port the DMA masters through,
+			 * set its entries to match.
+			 */
+			afi0: afi0 {
+				compatible = "xlnx,afi-fpga";
+				config-afi = <0 0>, <1 0>, <2 0>, <3 0>, <4 0>, <5 0>,
+					     <6 0>, <7 0>, <8 0>, <9 0>, <10 0>, <11 0>,
+					     <12 0>, <13 0>, <14 0xa00>, <15 0x000>;
+			};
+
+			axi_dma_0: dma@a0000000 {
+				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
+				reg = <0x0 0xa0000000 0x0 0x20000>;
+				#dma-cells = <1>;
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
+				interrupt-names = "mm2s_introut", "s2mm_introut";
+				interrupt-parent = <&gic>;
+				interrupts = <0 89 4>, <0 90 4>;	/* pl_ps_irq0[0], [1] */
+				xlnx,addrwidth = <0x20>;
+				xlnx,include-sg;
+				xlnx,sg-length-width = <0x1a>;	/* 26 bits: max 64 MiB - 1 per transfer */
+
+				dma-channel@a0000000 {
+					compatible = "xlnx,axi-dma-mm2s-channel";
+					dma-channels = <0x1>;
+					interrupts = <0 89 4>;
+					xlnx,datawidth = <0x20>;	/* MM2S stream: 32 bits */
+					xlnx,device-id = <0x0>;
+				};
+
+				dma-channel@a0000030 {
+					compatible = "xlnx,axi-dma-s2mm-channel";
+					dma-channels = <0x1>;
+					interrupts = <0 90 4>;
+					xlnx,datawidth = <0x20>;	/* S2MM stream: 32 bits */
+					xlnx,device-id = <0x0>;
+				};
+			};
+
+			/* Binds mydma.ko to the DMA's two channels; creates /dev/mydma. */
+			mydma {
+				compatible = "acme,mydma";
+				dmas = <&axi_dma_0 0>, <&axi_dma_0 1>;	/* 0 = MM2S, 1 = S2MM */
+				dma-names = "tx", "rx";
+			};
+		};
+	};
+};

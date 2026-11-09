@@ -1,0 +1,49 @@
+# Builds everything that goes onto the board, on every push:
+#   mydma.ko, the memory_thing app folder, and the dmatest binary.
+# Download them from the run's "kv260-board-files" artifact.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            gcc-11-aarch64-linux-gnu g++-aarch64-linux-gnu make bc flex bison \
+            libssl-dev libelf-dev device-tree-compiler
+
+      # The prepared kernel tree only changes when the tag or board config does.
+      - name: Cache kernel tree
+        uses: actions/cache@v4
+        with:
+          path: ~/kv260-kernel
+          key: kernel-${{ hashFiles('driver/build.sh', 'driver/kconfig.txt') }}
+
+      - name: Build kernel module
+        run: bash driver/build.sh
+
+      - name: Package Kria app
+        run: bash hw/package.sh
+
+      - name: Build user-space test
+        run: make -C app
+
+      - name: Collect board files
+        run: |
+          mkdir -p out/board
+          cp driver/mydma.ko app/dmatest out/board/
+          cp -r out/memory_thing out/board/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kv260-board-files
+          path: out/board/
