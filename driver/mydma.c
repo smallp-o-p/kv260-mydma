@@ -397,7 +397,7 @@ static ssize_t mydma_read(struct file *f, char __user *ubuf, size_t count,
    * beats reached an unarmed S2MM and the data is corrupted.
    */
 
-  ret = mydma_xfer_start(c, count, DMA_MEM_TO_DEV);
+  ret = mydma_xfer_start(c, count, DMA_DEV_TO_MEM);
 
   if (!ret)
     ret = mydma_xfer_wait_for_completion(c, count);
