@@ -70,17 +70,10 @@
 #include <linux/uaccess.h> /* copy_from_user() / copy_to_user() */
 #include <linux/version.h>
 
+#include "mydma_uapi.h"
+
 #define DRV_NAME "mydma"
-#define BUF_SIZE (1 << 20) /* 1 MiB per direction */
 #define XFER_TIMEOUT_MS 3000
-
-typedef struct {
-  __u32 tx_bytes; // send to MM2S
-  __u32 rx_bytes; // receive from S2MM
-} mydma_xfer_args;
-
-#define MYDMA_CMD_NUM 0x29
-#define MYDMA_XFER_CMD _IOWR('(', MYDMA_CMD_NUM, mydma_xfer_args)
 
 /*
  * Module parameter: settable at load time with `insmod mydma.ko max_xfer=N`,
@@ -331,7 +324,7 @@ static ssize_t mydma_xfer_wait_for_completion(struct mydma_chan *c,
 
 /* Never transfer more than the buffer holds, or than max_xfer allows. */
 static size_t mydma_clamp(size_t count) {
-  return min3(count, (size_t)BUF_SIZE, (size_t)max_xfer);
+  return min3(count, (size_t)MYDMA_BUF_SIZE, (size_t)max_xfer);
 }
 
 /*
@@ -427,9 +420,9 @@ static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
   if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
     return -EFAULT;
 
-  if (args.rx_bytes == 0 || args.tx_bytes == 0 || args.rx_bytes > BUF_SIZE ||
-      args.tx_bytes > BUF_SIZE || args.rx_bytes > max_xfer ||
-      args.tx_bytes > max_xfer)
+  if (args.rx_bytes == 0 || args.tx_bytes == 0 ||
+      args.rx_bytes > MYDMA_BUF_SIZE || args.tx_bytes > MYDMA_BUF_SIZE ||
+      args.rx_bytes > max_xfer || args.tx_bytes > max_xfer)
     return -EINVAL;
 
   struct mydma *md = container_of(fp->private_data, struct mydma, misc);
@@ -482,7 +475,7 @@ static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
 
   if (vma->vm_pgoff == 0) {
     p_channel = &md->tx;
-  } else if (vma->vm_pgoff == (BUF_SIZE >> PAGE_SHIFT)) { // rx
+  } else if (vma->vm_pgoff == (MYDMA_BUF_SIZE >> PAGE_SHIFT)) { // rx
     p_channel = &md->rx;
   } else {
     return -EINVAL;
@@ -491,7 +484,7 @@ static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
   vma->vm_pgoff = 0;
 
   return dma_mmap_coherent(p_channel->dma_dev, vma, p_channel->buf,
-                           p_channel->buf_dma, BUF_SIZE);
+                           p_channel->buf_dma, MYDMA_BUF_SIZE);
 }
 
 /*
@@ -543,7 +536,8 @@ static int mydma_chan_init(struct device *dev, struct mydma_chan *c,
    * GFP_KERNEL = a normal allocation that may sleep (fine in probe).
    */
   c->dma_dev = c->chan->device->dev;
-  c->buf = dma_alloc_coherent(c->dma_dev, BUF_SIZE, &c->buf_dma, GFP_KERNEL);
+  c->buf =
+      dma_alloc_coherent(c->dma_dev, MYDMA_BUF_SIZE, &c->buf_dma, GFP_KERNEL);
   if (!c->buf) {
     dma_release_channel(c->chan);
     return -ENOMEM;
@@ -560,7 +554,7 @@ static void mydma_chan_free(struct mydma_chan *c) {
     dmaengine_terminate_sync(c->chan); /* cancel anything still queued */
     dma_release_channel(c->chan);
   }
-  dma_free_coherent(c->dma_dev, BUF_SIZE, c->buf, c->buf_dma);
+  dma_free_coherent(c->dma_dev, MYDMA_BUF_SIZE, c->buf, c->buf_dma);
 }
 
 /*
