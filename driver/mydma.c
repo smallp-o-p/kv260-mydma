@@ -421,7 +421,7 @@ static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
   mydma_xfer_args args;
   int ret;
 
-  if (cmd != MYDMA_CMD_NUM)
+  if (cmd != MYDMA_XFER_CMD)
     return -ENOTTY;
 
   if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
