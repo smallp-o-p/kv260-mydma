@@ -1,5 +1,5 @@
 # Builds everything that goes onto the board, on every push:
-#   mydma.ko, the memory_thing app folder, and the dmatest binary.
+#   mydma.ko, the memory_thing app folder, and the dmatest / dmatest_rw binaries.
 # Download them from the run's "kv260-board-files" artifact.
 name: build
 
@@ -40,7 +40,7 @@ jobs:
       - name: Collect board files
         run: |
           mkdir -p out/board
-          cp driver/mydma.ko app/dmatest out/board/
+          cp driver/mydma.ko app/dmatest app/dmatest_rw out/board/
           cp -r out/memory_thing out/board/
 
       - uses: actions/upload-artifact@v4

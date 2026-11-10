@@ -1,30 +1,20 @@
-// dmatest.cpp - use /dev/mydma from C++: loopback check + throughput loop.
+// dmatest.cpp - loopback test for /dev/mydma using mmap + ioctl.
 //
-// Build in WSL (static, so the board's older glibc doesn't matter):
-//   sudo apt install g++-aarch64-linux-gnu
-//   aarch64-linux-gnu-g++ -O2 -std=c++17 -static -pthread dmatest.cpp -o dmatest
-// Run on the board:
-//   sudo ./dmatest                 # one 1 MiB round trip, checked
-//   sudo ./dmatest 4096 1000       # 1000 round trips of 4 KiB, timed
+// Single-threaded: the driver's MYDMA_XFER_CMD arms S2MM before starting MM2S,
+// so there is no start-up race (unlike the old read()/write() test, now
+// dmatest_rw.cpp).
 //
-// How the driver behaves (see mydma.c):
-//   write(fd, buf, n) sends n bytes on MM2S and blocks until the DMA is done.
-//   read(fd, buf, n)  arms S2MM for up to n bytes, blocks until a packet
-//                     (TLAST) or n bytes arrive, returns the bytes received.
-//   Both give up after 3 s with ETIMEDOUT; each call moves at most max_xfer
-//   bytes (module parameter).
-// A write blocks until its data has left, and a loopback design can't take
-// data until S2MM is armed, so the read and the write must run on separate
-// threads.
+// Build in WSL:   make -C app
+// Run on board:   sudo ./dmatest                 # 1000 round trips of 4 KiB
+//                 sudo ./dmatest 1048576 100     # 100 round trips of 1 MiB
+// Sizes above 16383 bytes need the module loaded with max_xfer, e.g.
+//   sudo insmod mydma.ko max_xfer=1048576
 //
-// KNOWN ISSUE: S2MM must be armed BEFORE MM2S starts. If data reaches an
-// unarmed S2MM, the received data is silently corrupted (seen: 8 words sent,
-// "2 3 0 0 0 0 0 0" received, full length reported). round_trip() below
-// starts the reader thread and writes immediately, so it can lose that race.
-// User space can't know when another thread's read() has armed S2MM; the fix
-// is a driver call that arms S2MM first, then starts MM2S (planned ioctl).
+// The PL design adds 1 to every 32-bit word, so the check is out[i] == in[i] + 1.
 
 #include <fcntl.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -33,97 +23,138 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <future>
 #include <random>
-#include <stdexcept>
 #include <string>
 #include <system_error>
-#include <vector>
+
+#include "mydma_uapi.h"
 
 class MyDma {
 public:
-    explicit MyDma(const char *path = "/dev/mydma") : fd_(::open(path, O_RDWR)) {
+    explicit MyDma(const char *path = "/dev/mydma") {
+        fd_ = ::open(path, O_RDWR);
         if (fd_ < 0)
-            throw std::system_error(errno, std::generic_category(),
-                                    std::string("open ") + path);
+            fail(std::string("open ") + path);
+        tx_ = map(MYDMA_TX_OFFSET, "mmap tx buffer");
+        rx_ = map(MYDMA_RX_OFFSET, "mmap rx buffer");
     }
-    ~MyDma() { if (fd_ >= 0) ::close(fd_); }
+
+    ~MyDma() {
+        if (rx_) ::munmap(rx_, MYDMA_BUF_SIZE);
+        if (tx_) ::munmap(tx_, MYDMA_BUF_SIZE);
+        if (fd_ >= 0) ::close(fd_);
+    }
+
     MyDma(const MyDma &) = delete;
     MyDma &operator=(const MyDma &) = delete;
 
-    // Send len bytes as one MM2S transfer. Returns bytes sent (may be less
-    // than len if len > max_xfer).
-    size_t send(const void *data, size_t len) {
-        ssize_t n = ::write(fd_, data, len);
-        if (n < 0)
-            throw std::system_error(errno, std::generic_category(), "mydma write");
-        return static_cast<size_t>(n);
-    }
+    // The DMA buffers themselves. Write input into tx() before xfer(); read
+    // the result from rx() after it. Both are uncached on this board: fine for
+    // filling and checking, slow for heavy processing (copy out first).
+    std::uint32_t *tx() { return static_cast<std::uint32_t *>(tx_); }
+    const std::uint32_t *rx() const { return static_cast<const std::uint32_t *>(rx_); }
 
-    // Receive one S2MM transfer of up to len bytes. Returns bytes received.
-    size_t receive(void *data, size_t len) {
-        ssize_t n = ::read(fd_, data, len);
-        if (n < 0)
-            throw std::system_error(errno, std::generic_category(), "mydma read");
-        return static_cast<size_t>(n);
-    }
-
-    // Send `in` and collect what comes back, concurrently.
-    size_t round_trip(const std::vector<uint32_t> &in, std::vector<uint32_t> &out) {
-        const size_t bytes = in.size() * sizeof(uint32_t);
-        out.assign(in.size(), 0);
-        auto rx = std::async(std::launch::async,
-                             [&] { return receive(out.data(), bytes); });
-        size_t sent = send(in.data(), bytes);
-        size_t got = rx.get();   // rethrows if the read failed
-        if (sent != bytes)
-            throw std::runtime_error("short write: " + std::to_string(sent) +
-                                     " of " + std::to_string(bytes) +
-                                     " bytes (raise max_xfer?)");
-        return got;
+    // One round trip: send tx_bytes from tx(), receive up to rx_bytes into
+    // rx(). Returns the bytes actually received.
+    std::size_t xfer(std::uint32_t tx_bytes, std::uint32_t rx_bytes) {
+        mydma_xfer_args args{};
+        args.tx_bytes = tx_bytes;
+        args.rx_bytes = rx_bytes;
+        if (::ioctl(fd_, MYDMA_XFER_CMD, &args) < 0)
+            fail("ioctl MYDMA_XFER_CMD");
+        return args.rx_bytes;
     }
 
 private:
-    int fd_;
+    void *map(off_t offset, const char *what) {
+        void *p = ::mmap(nullptr, MYDMA_BUF_SIZE, PROT_READ | PROT_WRITE,
+                         MAP_SHARED, fd_, offset);
+        if (p == MAP_FAILED)
+            fail(what);
+        return p;
+    }
+
+    [[noreturn]] void fail(const std::string &what) {
+        int err = errno;
+        // Clean up what was opened so far; the destructor won't run.
+        if (rx_) ::munmap(rx_, MYDMA_BUF_SIZE);
+        if (tx_) ::munmap(tx_, MYDMA_BUF_SIZE);
+        if (fd_ >= 0) ::close(fd_);
+        rx_ = tx_ = nullptr;
+        fd_ = -1;
+        throw std::system_error(err, std::generic_category(), what);
+    }
+
+    int fd_ = -1;
+    void *tx_ = nullptr;
+    void *rx_ = nullptr;
 };
 
 int main(int argc, char **argv) {
-    const size_t bytes = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 1 << 20;
-    const int iterations = argc > 2 ? std::atoi(argv[2]) : 1;
-    if (bytes == 0 || bytes % 4) {
-        std::fprintf(stderr, "size must be a non-zero multiple of 4 bytes\n");
+    const unsigned long bytes = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 4096;
+    const long iterations = argc > 2 ? std::strtol(argv[2], nullptr, 0) : 1000;
+
+    if (bytes == 0 || bytes % 4 || bytes > MYDMA_BUF_SIZE || iterations < 1) {
+        std::fprintf(stderr,
+                     "usage: %s [bytes (multiple of 4, max %d)] [iterations]\n",
+                     argv[0], MYDMA_BUF_SIZE);
         return 2;
     }
+    const std::size_t words = bytes / 4;
 
     try {
         MyDma dma;
-        std::vector<uint32_t> in(bytes / 4), out;
         std::mt19937 rng(12345);
-        for (auto &w : in) w = rng();
+        double dma_seconds = 0;
+        long failures = 0;
 
-        auto t0 = std::chrono::steady_clock::now();
-        size_t got = 0;
-        for (int i = 0; i < iterations; ++i)
-            got = dma.round_trip(in, out);
-        auto t1 = std::chrono::steady_clock::now();
+        for (long it = 0; it < iterations; ++it) {
+            // Fresh data every iteration, so a stale rx buffer can't pass.
+            std::uint32_t *in = dma.tx();
+            for (std::size_t i = 0; i < words; ++i)
+                in[i] = rng();
 
-        // The PL adds 1 to each 32-bit word.
-        size_t bad = 0;
-        for (size_t i = 0; i < got / 4; ++i)
-            if (out[i] != in[i] + 1u) {
-                if (bad++ < 5)
-                    std::printf("word %zu: sent 0x%08x, got 0x%08x\n", i, in[i], out[i]);
+            auto t0 = std::chrono::steady_clock::now();
+            std::size_t got = dma.xfer(bytes, bytes);
+            dma_seconds += std::chrono::duration<double>(
+                               std::chrono::steady_clock::now() - t0).count();
+
+            if (got != bytes) {
+                std::printf("iteration %ld: received %zu of %lu bytes\n", it, got, bytes);
+                ++failures;
+                continue;
             }
 
-        double s = std::chrono::duration<double>(t1 - t0).count();
-        std::printf("%d round trip(s) of %zu bytes: received %zu bytes per trip, "
-                    "%zu bad words\n", iterations, bytes, got, bad);
-        std::printf("%.3f s total, %.1f MB/s each way (includes the copies "
-                    "through the kernel buffer)\n",
-                    s, iterations * double(bytes) / s / 1e6);
-        return (bad == 0 && got == bytes) ? 0 : 1;
-    } catch (const std::exception &e) {
+            const std::uint32_t *out = dma.rx();
+            std::size_t bad = 0;
+            for (std::size_t i = 0; i < words; ++i) {
+                if (out[i] != in[i] + 1u) {
+                    if (bad < 3)
+                        std::printf("iteration %ld, word %zu: sent 0x%08x, got 0x%08x\n",
+                                    it, i, in[i], out[i]);
+                    ++bad;
+                }
+            }
+            if (bad) {
+                std::printf("iteration %ld: %zu of %zu words wrong\n", it, bad, words);
+                ++failures;
+            }
+        }
+
+        std::printf("%ld round trips of %lu bytes: %ld failed\n",
+                    iterations, bytes, failures);
+        std::printf("DMA time %.3f s, %.1f MB/s each way (ioctl only; filling and "
+                    "checking excluded)\n",
+                    dma_seconds, iterations * double(bytes) / dma_seconds / 1e6);
+        return failures ? 1 : 0;
+    } catch (const std::system_error &e) {
         std::fprintf(stderr, "error: %s\n", e.what());
+        if (e.code().value() == EINVAL)
+            std::fprintf(stderr, "hint: is the size above max_xfer? "
+                                 "cat /sys/module/mydma/parameters/max_xfer\n");
+        if (e.code().value() == ENOTTY)
+            std::fprintf(stderr, "hint: the driver doesn't recognise MYDMA_XFER_CMD; "
+                                 "are both built from the same mydma_uapi.h?\n");
         return 1;
     }
 }

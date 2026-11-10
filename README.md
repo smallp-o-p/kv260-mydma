@@ -23,6 +23,7 @@ tree and turns `write()` into an MM2S transfer and `read()` into an S2MM one.
 | Path | What it is |
 | --- | --- |
 | `driver/mydma.c` | The kernel module, heavily commented |
+| `driver/mydma_uapi.h` | The `ioctl`/`mmap` interface, shared by the driver and user programs |
 | `driver/Makefile` | Kbuild file for the module |
 | `driver/build.sh` | Fetches the matching kernel source and builds `mydma.ko` |
 | `driver/kconfig.txt` | The board kernel's config (`zcat /proc/config.gz`) |
@@ -34,7 +35,8 @@ tree and turns `write()` into an MM2S transfer and `read()` into an S2MM one.
 | `hw/package.sh` | Builds the Kria app folder from the `.bit` and overlay |
 | `tools/bit2bin.py` | `.bit` to `.bit.bin` without bootgen |
 | `tools/extract_bitbin.py` | Recovers a bitstream from a bootgen boot image |
-| `app/dmatest.cpp` | C++ loopback test and throughput loop |
+| `app/dmatest.cpp` | C++ loopback test using `mmap` + `ioctl` (single-threaded) |
+| `app/dmatest_rw.cpp` | Older C++ test using `read()`/`write()` on two threads |
 
 ## Target
 
@@ -104,22 +106,41 @@ paste -d' ' <(od -A n -v -t u4 /tmp/in) <(od -A n -v -t u4 /tmp/out) | awk '{n+=
 
 ## Using `/dev/mydma`
 
+**`mmap` + `ioctl` (zero-copy, no race).** Defined in `driver/mydma_uapi.h`:
+
+```c
+tx = mmap(NULL, MYDMA_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, MYDMA_TX_OFFSET);
+rx = mmap(NULL, MYDMA_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, MYDMA_RX_OFFSET);
+/* fill tx */
+mydma_xfer_args a = { .tx_bytes = n_in, .rx_bytes = n_out_max };
+ioctl(fd, MYDMA_XFER_CMD, &a);   /* arms S2MM, runs MM2S, waits for both */
+/* a.rx_bytes bytes of result are now in rx */
+```
+
+The buffers belong to the DMA while the `ioctl` runs. They are uncached on
+this board: fine to fill and check, slow for heavy CPU processing.
+
+**`read()` / `write()` (copies through the driver).**
+
 - `write(fd, buf, n)` sends `n` bytes on MM2S and blocks until they have left.
 - `read(fd, buf, n)` arms S2MM for up to `n` bytes, blocks until a packet
   (TLAST) or `n` bytes arrive, and returns the bytes received.
-- Both fail with `ETIMEDOUT` after 3 s. Each call moves at most `max_xfer`
-  bytes (module parameter, default 16383).
+
+Both paths fail with `ETIMEDOUT` after 3 s, and move at most `max_xfer` bytes
+per call (module parameter, default 16383).
 
 ## Known issues
 
 - **S2MM must be armed before MM2S starts.** If stream data reaches an unarmed
   S2MM, the received data is silently corrupted while the full length is
-  reported. With the current `read()`/`write()` interface, a loopback needs
-  `read()` running on another thread before `write()` starts, and user space
-  can't know when that has happened. `app/dmatest.cpp` can lose this race.
-  The planned fix is an `ioctl` that arms S2MM first, then starts MM2S.
-- Data is copied between user space and the driver's DMA buffers on every
-  call. Adding `mmap()` of those buffers removes the copies.
+  reported. `MYDMA_XFER_CMD` guarantees the order. With `read()`/`write()`, a
+  loopback needs `read()` running on another thread before `write()` starts,
+  and user space can't know when that has happened, so `app/dmatest_rw.cpp`
+  can lose this race.
+- `driver/mydma.c` still has its own copy of the interface definitions and
+  compares the `ioctl` command against `MYDMA_CMD_NUM` (the bare number)
+  instead of `MYDMA_XFER_CMD`. Until it includes `mydma_uapi.h` and compares
+  against `MYDMA_XFER_CMD`, `app/dmatest` gets `ENOTTY`.
 - The Vivado project itself is not in this repository yet, only its
   bitstream. Exporting the block design (`write_bd_tcl`) would make the
   hardware rebuildable.
