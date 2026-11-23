@@ -40,6 +40,8 @@ tree and turns `write()` into an MM2S transfer and `read()` into an S2MM one.
 | `app/bwtest.cpp` | Parallel DDR read bandwidth over the weight engines |
 | `hw/multi_hp.dts` | Overlay for the four-weight-engine design |
 | `hw/axis_sink.v` | Stream sink for read-only bandwidth tests |
+| `hw/lane_checker.v` | Stand-in for the array: 5 streams in, one result per transfer out |
+| `hw/tb/tb_lane_checker.v` | Random-traffic testbench for it (Icarus) |
 
 ## Target
 
@@ -107,34 +109,46 @@ wait
 paste -d' ' <(od -A n -v -t u4 /tmp/in) <(od -A n -v -t u4 /tmp/out) | awk '{n+=4; for(i=1;i<=4;i++) if (($i+1)%4294967296 != $(i+4)) bad++} END {print bad ? bad" of "n" words wrong" : "all "n" words = input + 1"}'
 ```
 
-## Parallel weight engines (multi_hp)
+## Four readers, one writer (multi_hp)
 
-The `multi_hp` design adds four AXI DMAs, `dma_w0`..`dma_w3`, one per HP
-port (128-bit, 250 MHz, 256-beat bursts). The loopback DMA stays as it was
-and becomes the activation engine. Each weight lane is built one of two ways:
+The `multi_hp` design is the shape of the LLM accelerator's memory system:
 
-- **Loopback test lane** (what `hw/multi_hp.dts` describes): MM2S ->
-  `hw/axis_incrementer.vhd` with `DATA_WIDTH=128` -> S2MM back to DDR. The
-  driver sees the S2MM channel as `w<i>rx`, and `bwtest` checks that every
-  32-bit word comes back as the word sent plus 1.
-- **Sink lane**: MM2S only, into `hw/axis_sink.v`. Measures pure DDR reads.
-  Delete the `[lb]` lines in the overlay for these lanes.
+```
+DDR --HP0--> dma_w0 MM2S --\
+DDR --HP1--> dma_w1 MM2S ---\
+DDR --HP2--> dma_w2 MM2S ----> lane_checker (stand-in for the array) --> axi_dma_0 S2MM --HPC0--> DDR
+DDR --HP3--> dma_w3 MM2S ---/
+DDR --HPC0-> axi_dma_0 MM2S /     (activations in)                          (results out)
+```
 
-Package with `APP=multi_hp bash hw/package.sh path/to/multi_hp.bit`.
+- `dma_w0`..`dma_w3`: MM2S-only AXI DMAs, one per HP port, 128-bit at
+  250 MHz with 256-beat bursts. They stream weights.
+- `axi_dma_0`: the old loopback DMA, now 128-bit on HPC0. It is the activation
+  engine: MM2S brings activations in, and S2MM is the single writer.
+- `hw/lane_checker.v`: takes all five streams at full rate and, for each
+  finished transfer, writes one 16-byte result (magic `C0FFEE`, lane id,
+  beat count, XOR of the data) through the S2MM. Swap it for the matmul array
+  later; the DMA side stays the same. `hw/tb/tb_lane_checker.v` tests it
+  (`iverilog -g2005 -o tb hw/lane_checker.v hw/tb/tb_lane_checker.v && vvp tb`).
 
-The driver finds the engines by the names `w0`..`w3` (and `w0rx`..`w3rx`)
-in `dma-names` and skips any that are missing, so it still runs on
-`memory_thing`. Each channel gets a `wbuf_mb` MiB buffer (module parameter,
-default 16, so eight of them fit the default 256 MiB CMA pool), mapped at
-`MYDMA_W_OFFSET(i)` and `MYDMA_W_RX_OFFSET(i)`. `MYDMA_STREAM_CMD` arms
-every loopback S2MM, starts the chosen engines together and reports when
-each lane finished; `MYDMA_INFO_CMD` says which exist.
+Overlay: `hw/multi_hp.dts`. Package with
+`APP=multi_hp bash hw/package.sh path/to/multi_hp.bit`.
+
+Driver: the weight engines are the optional channels `w0`..`w3` in
+`dma-names` (missing ones are skipped, so it still runs on `memory_thing`).
+Each gets a `wbuf_mb` MiB buffer (module parameter, default 16) mapped at
+`MYDMA_W_OFFSET(i)`. `MYDMA_STREAM_CMD` starts the chosen engines together
+and reports when each finished. With `MYDMA_STREAM_RESULTS` it also arms the
+activation S2MM for one result per lane; results land at the start of the rx
+buffer, and the call returns when the last one is in memory.
+`MYDMA_INFO_CMD` says which engines exist. Optional `w<i>rx` channels turn a
+lane into a loopback debug lane through `axis_incrementer` (`DATA_WIDTH=128`).
 
 ```bash
 sudo xmutil unloadapp && sudo xmutil loadapp multi_hp
 sudo insmod ~/mydma.ko max_xfer=1048576
 dmesg | grep mydma          # one "w<i>=..." line per weight engine
-sudo ./bwtest 16 20         # each engine alone, every pair, all four; checks loopback data
+sudo ./bwtest 16 20         # each engine alone, every pair, all four; checks every result
 ```
 
 ## Using `/dev/mydma`

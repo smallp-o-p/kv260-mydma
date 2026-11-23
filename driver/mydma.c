@@ -60,6 +60,7 @@
 #include <linux/dmaengine.h>   /* the dmaengine client API */
 #include <linux/fs.h>          /* struct file_operations */
 #include <linux/ioctl.h>
+#include <linux/bitops.h>     /* hweight32() */
 #include <linux/jiffies.h>    /* msecs_to_jiffies(): kernel time units */
 #include <linux/ktime.h>      /* ktime_get_ns(): timestamps for MYDMA_STREAM */
 #include <linux/miscdevice.h> /* the easy way to get a /dev node */
@@ -335,6 +336,54 @@ static int mydma_xfer_start(struct mydma_chan *c, size_t len,
   return 0;
 }
 
+/*
+ * Arm an S2MM channel for n separate packets of `chunk` bytes each, into
+ * consecutive slots of its buffer (used for lane_checker's result beats).
+ *
+ * One descriptor per packet, not one descriptor with n segments: xilinx_dma
+ * sets the interrupt threshold to the number of descriptors issued
+ * together, and completes the whole active list on the first interrupt. So
+ * n descriptors give one interrupt after the n-th packet, while a single
+ * n-segment descriptor would "complete" after the first packet.
+ * Only the last descriptor gets our callback.
+ */
+static int mydma_xfer_start_packets(struct mydma_chan *c, unsigned int n,
+                                    size_t chunk) {
+  struct dma_async_tx_descriptor *desc;
+  unsigned int k;
+  int ret;
+
+  if (!n || n * chunk > c->buf_size)
+    return -EINVAL;
+
+  if (atomic_xchg(&c->irq_lost, 0) || !c->chan) {
+    ret = mydma_rearm(c);
+    if (ret)
+      return ret;
+  }
+
+  reinit_completion(&c->done);
+  for (k = 0; k < n; k++) {
+    desc = dmaengine_prep_slave_single(c->chan, c->buf_dma + k * chunk, chunk,
+                                       DMA_DEV_TO_MEM,
+                                       DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+    if (!desc)
+      goto fail;
+    if (k == n - 1) {
+      desc->callback_result = mydma_done;
+      desc->callback_param = c;
+    }
+    if (dma_submit_error(dmaengine_submit(desc)))
+      goto fail;
+  }
+  dma_async_issue_pending(c->chan);
+  return 0;
+
+fail:
+  dmaengine_terminate_sync(c->chan); /* drop the ones already submitted */
+  return -EIO;
+}
+
 static ssize_t mydma_xfer_wait_for_completion(struct mydma_chan *c,
                                               size_t len) {
   /*
@@ -538,22 +587,34 @@ static long mydma_ioctl_info(struct mydma *md, unsigned long arg) {
  * it armed for the same byte count BEFORE any MM2S starts, as in
  * MYDMA_XFER_CMD, and the lane counts as done when its S2MM finishes.
  *
- * Each channel has its own mutex, taken in index order (all MM2S, then all
- * S2MM), so two callers using different engines don't block each other,
- * and MYDMA_XFER_CMD on tx/rx (the activation engine) can run alongside.
+ * With MYDMA_STREAM_RESULTS, the activation engine's S2MM (rx) is also
+ * armed, for one 16-byte result beat per lane in the mask: the shape of
+ * the real design, four readers in and one writer out. The beats land in
+ * the rx buffer in the order the lanes finish, and elapsed_ns runs until
+ * the last one is in memory.
+ *
+ * Each channel has its own mutex. rx is taken first (MYDMA_XFER_CMD also
+ * takes rx before tx, so the order is consistent), then the weight
+ * channels in index order. Callers using different engines don't block
+ * each other.
  */
 static long mydma_ioctl_stream(struct mydma *md, unsigned long arg) {
   mydma_stream_args a;
   struct mydma_chan *chans[2 * MYDMA_NUM_W]; /* MM2S 0..3, then S2MM 0..3 */
   unsigned int i, locked = 0, queued = 0, waiting = 0;
+  unsigned int n_res = 0;
+  bool results, rx_locked = false, rx_armed = false;
   u64 t0, t_end = 0;
   long ret = 0;
 
   if (copy_from_user(&a, (void __user *)arg, sizeof(a)))
     return -EFAULT;
 
-  if (!a.mask || (a.mask & ~md->w_mask) || a.reserved)
+  if (!a.mask || (a.mask & ~md->w_mask) || (a.flags & ~MYDMA_STREAM_RESULTS))
     return -EINVAL;
+  results = a.flags & MYDMA_STREAM_RESULTS;
+  if (results)
+    n_res = hweight32(a.mask);
   for (i = 0; i < MYDMA_NUM_W; i++)
     if ((a.mask & BIT(i)) &&
         (!a.bytes[i] || a.bytes[i] > md->w[i].buf_size))
@@ -570,6 +631,11 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned long arg) {
     chans[i] = rx ? &md->w_rx[lane] : &md->w[lane];
   }
 
+  if (results) {
+    if (mutex_lock_interruptible(&md->rx.lock))
+      return -ERESTARTSYS;
+    rx_locked = true;
+  }
   for (i = 0; i < 2 * MYDMA_NUM_W; i++) {
     if (!chans[i])
       continue;
@@ -584,6 +650,12 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned long arg) {
    * Arm every S2MM first (issue_pending on S2MM only arms it: no data
    * moves until MM2S sends some), then queue every MM2S.
    */
+  if (results) {
+    ret = mydma_xfer_start_packets(&md->rx, n_res, MYDMA_RESULT_BYTES);
+    if (ret)
+      goto cancel;
+    rx_armed = true;
+  }
   for (i = MYDMA_NUM_W; i < 2 * MYDMA_NUM_W; i++) {
     if (!chans[i])
       continue;
@@ -629,6 +701,16 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned long arg) {
     a.done_ns[lane] = chans[i]->t_done - t0;
     t_end = max(t_end, chans[i]->t_done);
   }
+  if (rx_armed) {
+    ssize_t got = mydma_xfer_wait_for_completion(&md->rx, MYDMA_RESULT_BYTES);
+
+    rx_armed = false; /* waited for: aborted already on timeout */
+    if (got != MYDMA_RESULT_BYTES) {
+      ret = got < 0 ? got : -EIO;
+      goto unlock;
+    }
+    t_end = max(t_end, md->rx.t_done);
+  }
   a.elapsed_ns = t_end - t0;
   goto unlock;
 
@@ -637,11 +719,15 @@ cancel:
   for (i = 0; i < 2 * MYDMA_NUM_W; i++)
     if ((queued | waiting) & BIT(i))
       mydma_abort(chans[i]);
+  if (rx_armed)
+    mydma_abort(&md->rx);
 
 unlock:
   for (i = 0; i < 2 * MYDMA_NUM_W; i++)
     if (locked & BIT(i))
       mutex_unlock(&chans[i]->lock);
+  if (rx_locked)
+    mutex_unlock(&md->rx.lock);
 
   if (!ret && copy_to_user((void __user *)arg, &a, sizeof(a)))
     return -EFAULT;

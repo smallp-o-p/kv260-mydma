@@ -79,15 +79,23 @@ typedef struct {
  * Argument of MYDMA_STREAM_CMD: send bytes[i] from the start of w<i>'s
  * buffer on every engine in mask, all at once, and wait for all of them.
  * On a loopback lane, bytes[i] must also come back into its rx buffer.
+ *
+ * MYDMA_STREAM_RESULTS: also arm the activation engine's S2MM for one
+ * MYDMA_RESULT_BYTES result per lane in mask (hw/lane_checker.v writes one
+ * per finished transfer). They land at the start of the rx buffer
+ * (MYDMA_RX_OFFSET), in the order the lanes finished.
  * 64 bytes, no implicit padding.
  */
 typedef struct {
 	__u32 mask;                 /* in:  which engines (bit i = w<i>) */
 	__u32 bytes[MYDMA_NUM_W];   /* in:  bytes per engine; keep a multiple of 4 KiB */
-	__u32 reserved;             /*      must be 0 */
+	__u32 flags;                /* in:  0 or MYDMA_STREAM_RESULTS */
 	__u64 elapsed_ns;           /* out: first start to last completion */
 	__u64 done_ns[MYDMA_NUM_W]; /* out: first start to lane i's completion */
 } mydma_stream_args;
+
+#define MYDMA_STREAM_RESULTS 0x1u
+#define MYDMA_RESULT_BYTES   16
 
 #define MYDMA_INFO_CMD   _IOR('(', 0x2a, mydma_info_args)
 #define MYDMA_STREAM_CMD _IOWR('(', 0x2b, mydma_stream_args)

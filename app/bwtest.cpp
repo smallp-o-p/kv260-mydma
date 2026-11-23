@@ -1,6 +1,11 @@
 // bwtest.cpp - DDR -> PL read bandwidth over the weight engines w0..w3.
 //
-// Each weight engine is an AXI DMA on its own HP port. A lane is one of:
+// Each weight engine is an AXI DMA on its own HP port. In the standard
+// multi_hp design (4 readers + 1 writer) every lane is MM2S only, into
+// hw/lane_checker.v, which writes one 16-byte result per finished transfer
+// through the activation DMA's S2MM. bwtest checks every result: magic,
+// lane id, beat count and the XOR of the lane's data, computed here.
+// Other lane types (use --no-results for a design without lane_checker):
 //   - sink lane: MM2S only, into hw/axis_sink.v. Measures pure DDR reads.
 //   - loopback lane (the driver reports a w<i>rx channel): MM2S ->
 //     hw/axis_incrementer.vhd (DATA_WIDTH=128) -> S2MM. Checks the data:
@@ -13,6 +18,7 @@
 // Build in WSL:   make -C app
 // Run on board:   sudo ./bwtest              # 16 MiB per engine, 20 runs each
 //                 sudo ./bwtest 8 50         # 8 MiB per engine, 50 runs
+//                 sudo ./bwtest 16 20 --no-results   # no lane_checker
 //
 // It runs every engine alone, then the pairs, then all of them. The pairs
 // show whether two HP ports share a DDR controller port: a pair that shares
@@ -46,9 +52,53 @@ struct Result {
     double eng_gbs[MYDMA_NUM_W];     // bytes_i / (first start -> engine i done)
 };
 
+std::string mask_name(unsigned mask) {
+    std::string s;
+    for (int i = 0; i < MYDMA_NUM_W; ++i)
+        if (mask & (1u << i))
+            s += (s.empty() ? "w" : "+w") + std::to_string(i);
+    return s;
+}
+
+// What lane_checker should report for each lane's buffer, and where its
+// result beats land (the activation DMA's rx buffer).
+bool g_results = true;
+std::uint64_t g_expect_xor[MYDMA_NUM_W];
+std::uint32_t g_expect_beats;
+const volatile std::uint32_t *g_res = nullptr;
+long g_result_errors = 0;
+
+void check_results(unsigned mask) {
+    unsigned seen = 0;
+    const int n = __builtin_popcount(mask);
+    for (int k = 0; k < n; ++k) {
+        const volatile std::uint32_t *b = g_res + 4 * k;   // one 16-byte beat
+        const std::uint64_t x = std::uint64_t(b[0]) | (std::uint64_t(b[1]) << 32);
+        const std::uint32_t beats = b[2], top = b[3];
+        const unsigned lane = top & 0xff;
+        const bool ok = (top >> 8) == 0xC0FFEEu && lane < MYDMA_NUM_W &&
+                        (mask & (1u << lane)) && !(seen & (1u << lane)) &&
+                        beats == g_expect_beats && x == g_expect_xor[lane];
+        if (!ok) {
+            if (g_result_errors < 10)
+                std::printf("  result %d of %s wrong: %08x %08x %08x %08x "
+                            "(want C0FFEE0%u, %u beats, xor %016llx)\n", k,
+                            mask_name(mask).c_str(), top, beats, b[1], b[0],
+                            lane < MYDMA_NUM_W ? lane : 0, g_expect_beats,
+                            (unsigned long long)g_expect_xor[lane < MYDMA_NUM_W ? lane : 0]);
+            ++g_result_errors;
+        }
+        seen |= 1u << (lane & 31);
+    }
+}
+
 Result run_once(int fd, unsigned mask, std::uint32_t bytes) {
     mydma_stream_args a{};
     a.mask = mask;
+    a.flags = g_results ? MYDMA_STREAM_RESULTS : 0;
+    if (g_results)
+        for (int k = 0; k < 4 * MYDMA_NUM_W; ++k)
+            const_cast<volatile std::uint32_t *>(g_res)[k] = 0;   // no stale pass
     for (int i = 0; i < MYDMA_NUM_W; ++i)
         if (mask & (1u << i))
             a.bytes[i] = bytes;
@@ -64,22 +114,24 @@ Result run_once(int fd, unsigned mask, std::uint32_t bytes) {
         r.eng_gbs[i] = double(bytes) / double(a.done_ns[i]);   // bytes/ns = GB/s
     }
     r.agg_gbs = total / double(a.elapsed_ns);
+    if (g_results)
+        check_results(mask);
     return r;
 }
 
-std::string mask_name(unsigned mask) {
-    std::string s;
-    for (int i = 0; i < MYDMA_NUM_W; ++i)
-        if (mask & (1u << i))
-            s += (s.empty() ? "w" : "+w") + std::to_string(i);
-    return s;
-}
 
 }  // namespace
 
 int main(int argc, char **argv) {
-    const unsigned long mib = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 16;
-    const long runs = argc > 2 ? std::strtol(argv[2], nullptr, 0) : 20;
+    std::vector<const char *> pos;
+    for (int k = 1; k < argc; ++k) {
+        if (std::strcmp(argv[k], "--no-results") == 0)
+            g_results = false;
+        else
+            pos.push_back(argv[k]);
+    }
+    const unsigned long mib = pos.size() > 0 ? std::strtoul(pos[0], nullptr, 0) : 16;
+    const long runs = pos.size() > 1 ? std::strtol(pos[1], nullptr, 0) : 20;
 
     int fd = ::open("/dev/mydma", O_RDWR);
     if (fd < 0)
@@ -94,6 +146,14 @@ int main(int argc, char **argv) {
     }
 
     const std::uint32_t bytes = std::uint32_t(mib << 20);
+    g_expect_beats = bytes / 16;
+    if (g_results) {
+        void *p = ::mmap(nullptr, MYDMA_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+                         MYDMA_RX_OFFSET);
+        if (p == MAP_FAILED)
+            die("mmap rx (result) buffer");
+        g_res = static_cast<const volatile std::uint32_t *>(p);
+    }
     std::uint32_t *txbuf[MYDMA_NUM_W] = {};
     std::uint32_t *rxbuf[MYDMA_NUM_W] = {};
     for (int i = 0; i < MYDMA_NUM_W; ++i) {
@@ -113,6 +173,10 @@ int main(int argc, char **argv) {
         for (std::size_t k = 0; k < bytes / 4; ++k)
             w[k] = std::uint32_t(k * 2654435761u) ^ std::uint32_t(i);
         txbuf[i] = w;
+        std::uint64_t x = 0;                     // lane_checker's XOR fold
+        for (std::size_t k = 0; k + 1 < bytes / 4; k += 2)
+            x ^= std::uint64_t(w[k]) | (std::uint64_t(w[k + 1]) << 32);
+        g_expect_xor[i] = x;
         const bool loop = info.w_rx_mask & (1u << i);
         if (loop) {
             void *q = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
@@ -179,6 +243,46 @@ int main(int argc, char **argv) {
         std::printf("Loopback lanes also write every byte back, so DDR traffic on them "
                     "is twice the GB/s shown.\n%s\n",
                     bad_lanes ? "DATA CHECK FAILED (see above)" : "Data check: all loopback lanes OK");
+    // The activation path: MM2S on the activation DMA into lane_checker's
+    // input 4, one result back through the same S2MM. 8 KiB stays under the
+    // driver's default max_xfer.
+    if (g_results) {
+        const std::uint32_t act_bytes = 8192;
+        void *p = ::mmap(nullptr, MYDMA_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+                         MYDMA_TX_OFFSET);
+        if (p == MAP_FAILED)
+            die("mmap tx (activation) buffer");
+        auto *t = static_cast<std::uint32_t *>(p);
+        std::uint64_t x = 0;
+        for (std::uint32_t k = 0; k < act_bytes / 4; ++k)
+            t[k] = k * 0x9E3779B9u + 1;
+        for (std::uint32_t k = 0; k < act_bytes / 4; k += 2)
+            x ^= std::uint64_t(t[k]) | (std::uint64_t(t[k + 1]) << 32);
+        for (int k = 0; k < 4; ++k)
+            const_cast<volatile std::uint32_t *>(g_res)[k] = 0;
+        mydma_xfer_args xa{};
+        xa.tx_bytes = act_bytes;
+        xa.rx_bytes = MYDMA_RESULT_BYTES;
+        if (::ioctl(fd, MYDMA_XFER_CMD, &xa) < 0)
+            die("ioctl MYDMA_XFER_CMD (activation path)");
+        const std::uint64_t gx = std::uint64_t(g_res[0]) | (std::uint64_t(g_res[1]) << 32);
+        const bool ok = xa.rx_bytes == MYDMA_RESULT_BYTES && g_res[3] == 0xC0FFEE04u &&
+                        g_res[2] == act_bytes / 16 && gx == x;
+        std::printf("activation path (8 KiB in, 1 result out): %s\n",
+                    ok ? "OK" : "WRONG");
+        if (!ok) {
+            std::printf("  got %08x %08x %08x %08x, want c0ffee04 %08x xor %016llx\n",
+                        g_res[3], g_res[2], g_res[1], g_res[0], act_bytes / 16,
+                        (unsigned long long)x);
+            ++g_result_errors;
+        }
+        ::munmap(p, MYDMA_BUF_SIZE);
+    }
+
+    if (g_results)
+        std::printf("Result beats: %s\n", g_result_errors
+                        ? (std::to_string(g_result_errors) + " wrong (see above)").c_str()
+                        : "all correct (count and XOR on every lane, every run)");
     ::close(fd);
-    return bad_lanes ? 1 : 0;
+    return (bad_lanes || g_result_errors) ? 1 : 0;
 }
