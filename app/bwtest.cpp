@@ -1,13 +1,18 @@
 // bwtest.cpp - DDR -> PL read bandwidth over the weight engines w0..w3.
 //
-// Each weight engine is an MM2S-only AXI DMA on its own HP port, streaming
-// into a sink that always accepts (hw/axis_sink.v). MYDMA_STREAM_CMD starts
-// the chosen engines together and reports when each one finished, so this
-// measures what the HP ports and the DDR controller can actually deliver.
+// Each weight engine is an AXI DMA on its own HP port. A lane is one of:
+//   - sink lane: MM2S only, into hw/axis_sink.v. Measures pure DDR reads.
+//   - loopback lane (the driver reports a w<i>rx channel): MM2S ->
+//     hw/axis_incrementer.vhd (DATA_WIDTH=128) -> S2MM. Checks the data:
+//     every 32-bit word must come back as the word sent plus 1. The DDR then
+//     carries each byte twice (read and write back), so GB/s here is the
+//     read rate with an equal write load running at the same time.
+// MYDMA_STREAM_CMD starts the chosen engines together and reports when each
+// one finished.
 //
 // Build in WSL:   make -C app
-// Run on board:   sudo ./bwtest              # 32 MiB per engine, 20 runs each
-//                 sudo ./bwtest 16 50        # 16 MiB per engine, 50 runs
+// Run on board:   sudo ./bwtest              # 16 MiB per engine, 20 runs each
+//                 sudo ./bwtest 8 50         # 8 MiB per engine, 50 runs
 //
 // It runs every engine alone, then the pairs, then all of them. The pairs
 // show whether two HP ports share a DDR controller port: a pair that shares
@@ -73,7 +78,7 @@ std::string mask_name(unsigned mask) {
 }  // namespace
 
 int main(int argc, char **argv) {
-    const unsigned long mib = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 32;
+    const unsigned long mib = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 16;
     const long runs = argc > 2 ? std::strtol(argv[2], nullptr, 0) : 20;
 
     int fd = ::open("/dev/mydma", O_RDWR);
@@ -89,6 +94,8 @@ int main(int argc, char **argv) {
     }
 
     const std::uint32_t bytes = std::uint32_t(mib << 20);
+    std::uint32_t *txbuf[MYDMA_NUM_W] = {};
+    std::uint32_t *rxbuf[MYDMA_NUM_W] = {};
     for (int i = 0; i < MYDMA_NUM_W; ++i) {
         if (!(info.w_mask & (1u << i)))
             continue;
@@ -105,9 +112,41 @@ int main(int argc, char **argv) {
         auto *w = static_cast<std::uint32_t *>(p);
         for (std::size_t k = 0; k < bytes / 4; ++k)
             w[k] = std::uint32_t(k * 2654435761u) ^ std::uint32_t(i);
-        std::printf("w%d: %u MiB buffer, testing %lu MiB\n", i,
-                    info.w_buf_bytes[i] >> 20, mib);
+        txbuf[i] = w;
+        const bool loop = info.w_rx_mask & (1u << i);
+        if (loop) {
+            void *q = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+                             off_t(MYDMA_W_RX_OFFSET(i)));
+            if (q == MAP_FAILED)
+                die("mmap loopback rx buffer");
+            rxbuf[i] = static_cast<std::uint32_t *>(q);
+        }
+        std::printf("w%d: %u MiB buffer, testing %lu MiB, %s lane\n", i,
+                    info.w_buf_bytes[i] >> 20, mib, loop ? "loopback (checked)" : "sink");
     }
+
+    // Loopback lanes: clear rx, run once, then every word must be tx + 1.
+    long bad_lanes = 0;
+    auto check = [&](unsigned mask) {
+        for (int i = 0; i < MYDMA_NUM_W; ++i)
+            if ((mask & (1u << i)) && rxbuf[i])
+                std::memset(rxbuf[i], 0, bytes);
+        run_once(fd, mask, bytes);
+        for (int i = 0; i < MYDMA_NUM_W; ++i) {
+            if (!(mask & (1u << i)) || !rxbuf[i])
+                continue;
+            std::size_t bad = 0, first = 0;
+            for (std::size_t k = 0; k < bytes / 4; ++k)
+                if (rxbuf[i][k] != txbuf[i][k] + 1u && bad++ == 0)
+                    first = k;
+            if (bad) {
+                std::printf("  %s: w%d DATA ERROR: %zu of %u words wrong, first at word %zu "
+                            "(sent 0x%08x, got 0x%08x)\n", mask_name(mask).c_str(), i, bad,
+                            bytes / 4, first, txbuf[i][first], rxbuf[i][first]);
+                ++bad_lanes;
+            }
+        }
+    };
 
     // Every single engine, every pair, every triple, then all four.
     std::vector<unsigned> masks;
@@ -119,7 +158,7 @@ int main(int argc, char **argv) {
     std::printf("\n%-14s %10s %10s   per engine GB/s (median run)\n",
                 "engines", "best GB/s", "median");
     for (unsigned m : masks) {
-        run_once(fd, m, bytes);                      // warm-up, not counted
+        check(m);                                    // warm-up + data check, not timed
         std::vector<Result> rs;
         for (long k = 0; k < runs; ++k)
             rs.push_back(run_once(fd, m, bytes));
@@ -136,6 +175,10 @@ int main(int argc, char **argv) {
 
     std::printf("\nCeiling per engine: 16 B x f_clk (4.0 GB/s at 250 MHz). "
                 "DDR4-2400 x64 peak is 19.2 GB/s.\n");
+    if (info.w_rx_mask)
+        std::printf("Loopback lanes also write every byte back, so DDR traffic on them "
+                    "is twice the GB/s shown.\n%s\n",
+                    bad_lanes ? "DATA CHECK FAILED (see above)" : "Data check: all loopback lanes OK");
     ::close(fd);
-    return 0;
+    return bad_lanes ? 1 : 0;
 }

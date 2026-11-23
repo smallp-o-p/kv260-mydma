@@ -27,7 +27,7 @@ tree and turns `write()` into an MM2S transfer and `read()` into an S2MM one.
 | `driver/Makefile` | Kbuild file for the module |
 | `driver/build.sh` | Fetches the matching kernel source and builds `mydma.ko` |
 | `driver/kconfig.txt` | The board kernel's config (`zcat /proc/config.gz`) |
-| `hw/axis_incrementer.vhd` | The PL stream block |
+| `hw/axis_incrementer.vhd` | The PL stream block (adds 1 per 32-bit word; `DATA_WIDTH` 32 or 128) |
 | `hw/memthing_wrapper.bit` | Vivado bitstream for the current design |
 | `hw/memory_thing.dtsi` | XSCT-generated device tree for that design (reference) |
 | `hw/memory_thing.dts` | Device tree overlay: programs the PL, describes the DMA, binds `mydma` |
@@ -39,7 +39,7 @@ tree and turns `write()` into an MM2S transfer and `read()` into an S2MM one.
 | `app/dmatest_rw.cpp` | Older C++ test using `read()`/`write()` on two threads |
 | `app/bwtest.cpp` | Parallel DDR read bandwidth over the weight engines |
 | `hw/multi_hp.dts` | Overlay for the four-weight-engine design |
-| `hw/axis_sink.v` | Stream sink for bandwidth tests |
+| `hw/axis_sink.v` | Stream sink for read-only bandwidth tests |
 
 ## Target
 
@@ -109,23 +109,32 @@ paste -d' ' <(od -A n -v -t u4 /tmp/in) <(od -A n -v -t u4 /tmp/out) | awk '{n+=
 
 ## Parallel weight engines (multi_hp)
 
-The `multi_hp` design adds four MM2S-only AXI DMAs, `dma_w0`..`dma_w3`, one
-per HP port (128-bit, 250 MHz, 256-beat bursts), each feeding
-`hw/axis_sink.v` for now. The loopback DMA stays as it was and becomes the
-activation engine. The overlay is `hw/multi_hp.dts`; package it with
-`APP=multi_hp bash hw/package.sh path/to/multi_hp.bit`.
+The `multi_hp` design adds four AXI DMAs, `dma_w0`..`dma_w3`, one per HP
+port (128-bit, 250 MHz, 256-beat bursts). The loopback DMA stays as it was
+and becomes the activation engine. Each weight lane is built one of two ways:
 
-The driver finds the engines by the names `w0`..`w3` in `dma-names` and
-skips any that are missing, so it still runs on `memory_thing`. Each engine
-gets a `wbuf_mb` MiB buffer (module parameter, default 32), mapped at
-`MYDMA_W_OFFSET(i)`. `MYDMA_STREAM_CMD` starts the chosen engines together
-and reports when each finished; `MYDMA_INFO_CMD` says which exist.
+- **Loopback test lane** (what `hw/multi_hp.dts` describes): MM2S ->
+  `hw/axis_incrementer.vhd` with `DATA_WIDTH=128` -> S2MM back to DDR. The
+  driver sees the S2MM channel as `w<i>rx`, and `bwtest` checks that every
+  32-bit word comes back as the word sent plus 1.
+- **Sink lane**: MM2S only, into `hw/axis_sink.v`. Measures pure DDR reads.
+  Delete the `[lb]` lines in the overlay for these lanes.
+
+Package with `APP=multi_hp bash hw/package.sh path/to/multi_hp.bit`.
+
+The driver finds the engines by the names `w0`..`w3` (and `w0rx`..`w3rx`)
+in `dma-names` and skips any that are missing, so it still runs on
+`memory_thing`. Each channel gets a `wbuf_mb` MiB buffer (module parameter,
+default 16, so eight of them fit the default 256 MiB CMA pool), mapped at
+`MYDMA_W_OFFSET(i)` and `MYDMA_W_RX_OFFSET(i)`. `MYDMA_STREAM_CMD` arms
+every loopback S2MM, starts the chosen engines together and reports when
+each lane finished; `MYDMA_INFO_CMD` says which exist.
 
 ```bash
 sudo xmutil unloadapp && sudo xmutil loadapp multi_hp
-sudo insmod ~/mydma.ko max_xfer=1048576 wbuf_mb=32
+sudo insmod ~/mydma.ko max_xfer=1048576
 dmesg | grep mydma          # one "w<i>=..." line per weight engine
-sudo ./bwtest 32 20         # each engine alone, every pair, all four
+sudo ./bwtest 16 20         # each engine alone, every pair, all four; checks loopback data
 ```
 
 ## Using `/dev/mydma`

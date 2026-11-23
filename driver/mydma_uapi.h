@@ -55,30 +55,38 @@ typedef struct {
  *   w0 = mmap(NULL, info.w_buf_bytes[0], PROT_READ | PROT_WRITE, MAP_SHARED,
  *             fd, MYDMA_W_OFFSET(0));
  *
- * The offsets leave MYDMA_W_MAX_MB of room per engine, so the buffers can
+ * A lane can also be a loopback test lane: the same AXI DMA with its S2MM
+ * channel enabled and named "w<i>rx", and a stream block such as
+ * axis_incrementer between MM2S and S2MM. Its receive buffer (same size)
+ * is mapped at MYDMA_W_RX_OFFSET(i). MYDMA_STREAM_CMD arms it automatically.
+ *
+ * The offsets leave MYDMA_W_MAX_MB of room per buffer, so the buffers can
  * grow later without changing this interface.
  */
 #define MYDMA_NUM_W      4
-#define MYDMA_W_MAX_MB   256
-#define MYDMA_W_OFFSET(i) (((__u64)(i) + 1) * ((__u64)MYDMA_W_MAX_MB << 20))
+#define MYDMA_W_MAX_MB   128
+#define MYDMA_W_OFFSET(i)    (((__u64)(i) + 1) * ((__u64)2 * MYDMA_W_MAX_MB << 20))
+#define MYDMA_W_RX_OFFSET(i) (MYDMA_W_OFFSET(i) + ((__u64)MYDMA_W_MAX_MB << 20))
 
 /* Argument of MYDMA_INFO_CMD (out only). */
 typedef struct {
-	__u32 w_mask;                  /* bit i set = engine w<i> exists */
-	__u32 w_buf_bytes[MYDMA_NUM_W]; /* size of each engine's buffer */
+	__u32 w_mask;                   /* bit i set = engine w<i> exists */
+	__u32 w_rx_mask;                /* bit i set = w<i> is a loopback lane */
+	__u32 w_buf_bytes[MYDMA_NUM_W]; /* size of each engine's buffer(s) */
 } mydma_info_args;
 
 /*
  * Argument of MYDMA_STREAM_CMD: send bytes[i] from the start of w<i>'s
  * buffer on every engine in mask, all at once, and wait for all of them.
+ * On a loopback lane, bytes[i] must also come back into its rx buffer.
  * 64 bytes, no implicit padding.
  */
 typedef struct {
 	__u32 mask;                 /* in:  which engines (bit i = w<i>) */
 	__u32 bytes[MYDMA_NUM_W];   /* in:  bytes per engine; keep a multiple of 4 KiB */
-	__u32 reserved;             /*      set to 0 */
+	__u32 reserved;             /*      must be 0 */
 	__u64 elapsed_ns;           /* out: first start to last completion */
-	__u64 done_ns[MYDMA_NUM_W]; /* out: first start to engine i's completion */
+	__u64 done_ns[MYDMA_NUM_W]; /* out: first start to lane i's completion */
 } mydma_stream_args;
 
 #define MYDMA_INFO_CMD   _IOR('(', 0x2a, mydma_info_args)

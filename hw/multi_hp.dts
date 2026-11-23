@@ -1,13 +1,16 @@
 // Device tree overlay for the multi_hp PL design on the KV260
 // (PetaLinux 2022.2): the memory_thing loopback DMA (now the activation
-// engine) plus four MM2S-only weight DMAs, one per HP port.
+// engine) plus four weight DMAs, one per HP port, each built as a loopback
+// test lane through axis_incrementer (marked [lb]; see dma_w0 for the sink
+// variant).
 // Loaded by `xmutil loadapp multi_hp`.
 //
 // Compile on the board:  dtc -@ -I dts -O dtb -o multi_hp.dtbo multi_hp.dts
 //
 // The addresses and interrupt numbers below assume the block design in the
-// walkthrough: weight DMA AXI-Lite at 0xA010_0000 + i * 0x1_0000, and
-// mm2s_introut of dma_w0..w3 on pl_ps_irq0[2..5] (GIC SPI 91..94). If your
+// walkthrough: weight DMA AXI-Lite at 0xA010_0000 + i * 0x1_0000,
+// mm2s_introut of dma_w0..w3 on pl_ps_irq0[2..5] (GIC SPI 91..94), and on
+// loopback lanes s2mm_introut on pl_ps_irq1[0..3] (GIC SPI 104..107). If your
 // Address Editor or xlconcat differs, change them here to match; the
 // XSCT-generated .dtsi for the new design is the reference.
 //
@@ -92,16 +95,24 @@
 			};
 
 
-			/* Weight engine 0: MM2S only, 128-bit, masters S_AXI_HP0_FPD. */
+			/*
+			 * Weight lane 0, masters S_AXI_HP0_FPD, 128-bit. Built as a
+			 * loopback test lane: MM2S -> axis_incrementer -> S2MM. For a
+			 * sink lane (MM2S only), delete the S2MM entries marked [lb]
+			 * and "w0rx" from the mydma node below.
+			 */
 			dma_w0: dma@a0100000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0100000 0x0 0x10000>;
 				#dma-cells = <1>;
-				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk";
-				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
-				interrupt-names = "mm2s_introut";
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk",
+					      "m_axi_s2mm_aclk";	/* [lb] last one */
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>,
+					 <&zynqmp_clk 71>;
+				interrupt-names = "mm2s_introut", "s2mm_introut";	/* [lb] s2mm */
 				interrupt-parent = <&gic>;
-				interrupts = <0 91 4>;	/* pl_ps_irq0[2] */
+				/* pl_ps_irq0[2], and [lb] pl_ps_irq1[0] */
+				interrupts = <0 91 4>, <0 104 4>;
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
 				xlnx,sg-length-width = <0x1a>;
@@ -113,18 +124,35 @@
 					xlnx,datawidth = <0x80>;	/* 128-bit stream */
 					xlnx,device-id = <0x1>;
 				};
+
+				/* [lb] the S2MM side of the loopback lane */
+				dma-channel@a0100030 {
+					compatible = "xlnx,axi-dma-s2mm-channel";
+					dma-channels = <0x1>;
+					interrupts = <0 104 4>;
+					xlnx,datawidth = <0x80>;
+					xlnx,device-id = <0x1>;
+				};
 			};
 
-			/* Weight engine 1: MM2S only, 128-bit, masters S_AXI_HP1_FPD. */
+			/*
+			 * Weight lane 1, masters S_AXI_HP1_FPD, 128-bit. Built as a
+			 * loopback test lane: MM2S -> axis_incrementer -> S2MM. For a
+			 * sink lane (MM2S only), delete the S2MM entries marked [lb]
+			 * and "w1rx" from the mydma node below.
+			 */
 			dma_w1: dma@a0110000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0110000 0x0 0x10000>;
 				#dma-cells = <1>;
-				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk";
-				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
-				interrupt-names = "mm2s_introut";
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk",
+					      "m_axi_s2mm_aclk";	/* [lb] last one */
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>,
+					 <&zynqmp_clk 71>;
+				interrupt-names = "mm2s_introut", "s2mm_introut";	/* [lb] s2mm */
 				interrupt-parent = <&gic>;
-				interrupts = <0 92 4>;	/* pl_ps_irq0[3] */
+				/* pl_ps_irq0[3], and [lb] pl_ps_irq1[1] */
+				interrupts = <0 92 4>, <0 105 4>;
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
 				xlnx,sg-length-width = <0x1a>;
@@ -136,18 +164,35 @@
 					xlnx,datawidth = <0x80>;	/* 128-bit stream */
 					xlnx,device-id = <0x2>;
 				};
+
+				/* [lb] the S2MM side of the loopback lane */
+				dma-channel@a0110030 {
+					compatible = "xlnx,axi-dma-s2mm-channel";
+					dma-channels = <0x1>;
+					interrupts = <0 105 4>;
+					xlnx,datawidth = <0x80>;
+					xlnx,device-id = <0x2>;
+				};
 			};
 
-			/* Weight engine 2: MM2S only, 128-bit, masters S_AXI_HP2_FPD. */
+			/*
+			 * Weight lane 2, masters S_AXI_HP2_FPD, 128-bit. Built as a
+			 * loopback test lane: MM2S -> axis_incrementer -> S2MM. For a
+			 * sink lane (MM2S only), delete the S2MM entries marked [lb]
+			 * and "w2rx" from the mydma node below.
+			 */
 			dma_w2: dma@a0120000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0120000 0x0 0x10000>;
 				#dma-cells = <1>;
-				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk";
-				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
-				interrupt-names = "mm2s_introut";
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk",
+					      "m_axi_s2mm_aclk";	/* [lb] last one */
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>,
+					 <&zynqmp_clk 71>;
+				interrupt-names = "mm2s_introut", "s2mm_introut";	/* [lb] s2mm */
 				interrupt-parent = <&gic>;
-				interrupts = <0 93 4>;	/* pl_ps_irq0[4] */
+				/* pl_ps_irq0[4], and [lb] pl_ps_irq1[2] */
+				interrupts = <0 93 4>, <0 106 4>;
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
 				xlnx,sg-length-width = <0x1a>;
@@ -159,18 +204,35 @@
 					xlnx,datawidth = <0x80>;	/* 128-bit stream */
 					xlnx,device-id = <0x3>;
 				};
+
+				/* [lb] the S2MM side of the loopback lane */
+				dma-channel@a0120030 {
+					compatible = "xlnx,axi-dma-s2mm-channel";
+					dma-channels = <0x1>;
+					interrupts = <0 106 4>;
+					xlnx,datawidth = <0x80>;
+					xlnx,device-id = <0x3>;
+				};
 			};
 
-			/* Weight engine 3: MM2S only, 128-bit, masters S_AXI_HP3_FPD. */
+			/*
+			 * Weight lane 3, masters S_AXI_HP3_FPD, 128-bit. Built as a
+			 * loopback test lane: MM2S -> axis_incrementer -> S2MM. For a
+			 * sink lane (MM2S only), delete the S2MM entries marked [lb]
+			 * and "w3rx" from the mydma node below.
+			 */
 			dma_w3: dma@a0130000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0130000 0x0 0x10000>;
 				#dma-cells = <1>;
-				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk";
-				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
-				interrupt-names = "mm2s_introut";
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk",
+					      "m_axi_s2mm_aclk";	/* [lb] last one */
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>,
+					 <&zynqmp_clk 71>;
+				interrupt-names = "mm2s_introut", "s2mm_introut";	/* [lb] s2mm */
 				interrupt-parent = <&gic>;
-				interrupts = <0 94 4>;	/* pl_ps_irq0[5] */
+				/* pl_ps_irq0[5], and [lb] pl_ps_irq1[3] */
+				interrupts = <0 94 4>, <0 107 4>;
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
 				xlnx,sg-length-width = <0x1a>;
@@ -182,18 +244,30 @@
 					xlnx,datawidth = <0x80>;	/* 128-bit stream */
 					xlnx,device-id = <0x4>;
 				};
+
+				/* [lb] the S2MM side of the loopback lane */
+				dma-channel@a0130030 {
+					compatible = "xlnx,axi-dma-s2mm-channel";
+					dma-channels = <0x1>;
+					interrupts = <0 107 4>;
+					xlnx,datawidth = <0x80>;
+					xlnx,device-id = <0x4>;
+				};
 			};
 
 			/*
 			 * Binds mydma.ko: tx/rx = the loopback (activation) engine,
-			 * w0..w3 = the weight engines. Drop any w<i> you haven't built
-			 * yet; the driver skips missing names.
+			 * w0..w3 = the weight engines' MM2S, w0rx..w3rx = their S2MM on
+			 * loopback lanes. Drop any name you haven't built (and its
+			 * dmas entry); the driver skips missing names.
 			 */
 			mydma {
 				compatible = "acme,mydma";
 				dmas = <&axi_dma_0 0>, <&axi_dma_0 1>,
-				       <&dma_w0 0>, <&dma_w1 0>, <&dma_w2 0>, <&dma_w3 0>;
-				dma-names = "tx", "rx", "w0", "w1", "w2", "w3";
+				       <&dma_w0 0>, <&dma_w1 0>, <&dma_w2 0>, <&dma_w3 0>,
+				       <&dma_w0 1>, <&dma_w1 1>, <&dma_w2 1>, <&dma_w3 1>;
+				dma-names = "tx", "rx", "w0", "w1", "w2", "w3",
+					    "w0rx", "w1rx", "w2rx", "w3rx";	/* [lb] */
 			};
 		};
 	};
