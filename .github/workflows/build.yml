@@ -34,13 +34,17 @@ jobs:
       - name: Package Kria app
         run: bash hw/package.sh
 
+      # No bitstream for multi_hp in the repo yet: just check its overlay compiles.
+      - name: Check multi_hp overlay
+        run: dtc -@ -q -I dts -O dtb -o /dev/null hw/multi_hp.dts
+
       - name: Build user-space test
         run: make -C app
 
       - name: Collect board files
         run: |
           mkdir -p out/board
-          cp driver/mydma.ko app/dmatest app/dmatest_rw out/board/
+          cp driver/mydma.ko app/dmatest app/dmatest_rw app/bwtest out/board/
           cp -r out/memory_thing out/board/
 
       - uses: actions/upload-artifact@v4

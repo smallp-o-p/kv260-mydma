@@ -6,6 +6,7 @@
 #
 #   dmatest     - mmap + ioctl loopback test (needs the ioctl-capable driver)
 #   dmatest_rw  - the older read()/write() test (has a start-up race; see source)
+#   bwtest      - parallel read bandwidth over the weight engines w0..w3
 
 # Plain `=`: make predefines CXX as g++, so `?=` would silently build for x86.
 # Still overridable: make CXX=...
@@ -14,11 +15,14 @@ CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra
 CPPFLAGS += -I../driver      # mydma_uapi.h, shared with the driver
 LDFLAGS  ?= -static -pthread
 
-PROGS = dmatest dmatest_rw
+PROGS = dmatest dmatest_rw bwtest
 
 all: $(PROGS)
 
 dmatest: dmatest.cpp ../driver/mydma_uapi.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
+
+bwtest: bwtest.cpp ../driver/mydma_uapi.h
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
 
 dmatest_rw: dmatest_rw.cpp

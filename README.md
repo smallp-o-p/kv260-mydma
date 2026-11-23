@@ -37,6 +37,9 @@ tree and turns `write()` into an MM2S transfer and `read()` into an S2MM one.
 | `tools/extract_bitbin.py` | Recovers a bitstream from a bootgen boot image |
 | `app/dmatest.cpp` | C++ loopback test using `mmap` + `ioctl` (single-threaded) |
 | `app/dmatest_rw.cpp` | Older C++ test using `read()`/`write()` on two threads |
+| `app/bwtest.cpp` | Parallel DDR read bandwidth over the weight engines |
+| `hw/multi_hp.dts` | Overlay for the four-weight-engine design |
+| `hw/axis_sink.v` | Stream sink for bandwidth tests |
 
 ## Target
 
@@ -102,6 +105,27 @@ sleep 0.5
 sudo dd if=/tmp/in of=/dev/mydma bs=1048576 count=1
 wait
 paste -d' ' <(od -A n -v -t u4 /tmp/in) <(od -A n -v -t u4 /tmp/out) | awk '{n+=4; for(i=1;i<=4;i++) if (($i+1)%4294967296 != $(i+4)) bad++} END {print bad ? bad" of "n" words wrong" : "all "n" words = input + 1"}'
+```
+
+## Parallel weight engines (multi_hp)
+
+The `multi_hp` design adds four MM2S-only AXI DMAs, `dma_w0`..`dma_w3`, one
+per HP port (128-bit, 250 MHz, 256-beat bursts), each feeding
+`hw/axis_sink.v` for now. The loopback DMA stays as it was and becomes the
+activation engine. The overlay is `hw/multi_hp.dts`; package it with
+`APP=multi_hp bash hw/package.sh path/to/multi_hp.bit`.
+
+The driver finds the engines by the names `w0`..`w3` in `dma-names` and
+skips any that are missing, so it still runs on `memory_thing`. Each engine
+gets a `wbuf_mb` MiB buffer (module parameter, default 32), mapped at
+`MYDMA_W_OFFSET(i)`. `MYDMA_STREAM_CMD` starts the chosen engines together
+and reports when each finished; `MYDMA_INFO_CMD` says which exist.
+
+```bash
+sudo xmutil unloadapp && sudo xmutil loadapp multi_hp
+sudo insmod ~/mydma.ko max_xfer=1048576 wbuf_mb=32
+dmesg | grep mydma          # one "w<i>=..." line per weight engine
+sudo ./bwtest 32 20         # each engine alone, every pair, all four
 ```
 
 ## Using `/dev/mydma`
