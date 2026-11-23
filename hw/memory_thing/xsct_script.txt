@@ -1,0 +1,15 @@
+set proj_root "C:/Users/wtran013/Documents/memory_thing"
+set xsa_files [glob -nocomplain $proj_root/*.xsa]
+if {[llength $xsa_files] == 0} {
+	puts "ERROR: No XSA file found in $proj_root"
+} else {
+	set xsa_path [lindex $xsa_files 0]
+	puts "Found XSA: $xsa_path"
+	set dts_dir "$proj_root/dts_output"
+	hsi open_hw_design $xsa_path
+	hsi set_repo_path C:/Xilinx/dt_xlnx_2022_1
+	hsi create_sw_design device-tree -os device_tree -proc psu_cortexa53_0
+	hsi generate_target -dir $dts_dir
+	hsi close_hw_design [hsi current_hw_design]
+	puts "Done. Device tree generated at: $dts_dir"
+}

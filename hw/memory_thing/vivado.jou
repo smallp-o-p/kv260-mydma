@@ -1,0 +1,114 @@
+#-----------------------------------------------------------
+# Vivado v2022.1 (64-bit)
+# SW Build 3526262 on Mon Apr 18 15:48:16 MDT 2022
+# IP Build 3524634 on Mon Apr 18 20:55:01 MDT 2022
+# Start of session at: Thu Oct 22 15:08:16 2026
+# Process ID: 10436
+# Current directory: C:/CEG4136/Vivado
+# Command line: vivado.exe
+# Log file: C:/CEG4136/Vivado/vivado.log
+# Journal file: C:/CEG4136/Vivado\vivado.jou
+# Running On: 1850-B302S105, OS: Windows, CPU Frequency: 3000 MHz, CPU Physical cores: 6, Host memory: 16951 MB
+#-----------------------------------------------------------
+start_gui
+open_project C:/Users/wtran013/Documents/memory_thing/memory_thing.xpr
+update_compile_order -fileset sources_1
+open_bd_design {C:/Users/wtran013/Documents/memory_thing/memory_thing.srcs/sources_1/bd/memthing/memthing.bd}
+delete_ip_run [get_files -of_objects [get_fileset sources_1] C:/Users/wtran013/Documents/memory_thing/memory_thing.srcs/sources_1/bd/memthing/memthing.bd]
+set_property synth_checkpoint_mode None [get_files  C:/Users/wtran013/Documents/memory_thing/memory_thing.srcs/sources_1/bd/memthing/memthing.bd]
+generate_target all [get_files  C:/Users/wtran013/Documents/memory_thing/memory_thing.srcs/sources_1/bd/memthing/memthing.bd]
+export_ip_user_files -of_objects [get_files C:/Users/wtran013/Documents/memory_thing/memory_thing.srcs/sources_1/bd/memthing/memthing.bd] -no_script -sync -force -quiet
+export_simulation -of_objects [get_files C:/Users/wtran013/Documents/memory_thing/memory_thing.srcs/sources_1/bd/memthing/memthing.bd] -directory C:/Users/wtran013/Documents/memory_thing/memory_thing.ip_user_files/sim_scripts -ip_user_files_dir C:/Users/wtran013/Documents/memory_thing/memory_thing.ip_user_files -ipstatic_source_dir C:/Users/wtran013/Documents/memory_thing/memory_thing.ip_user_files/ipstatic -lib_map_path [list {modelsim=C:/Users/wtran013/Documents/memory_thing/memory_thing.cache/compile_simlib/modelsim} {questa=C:/Users/wtran013/Documents/memory_thing/memory_thing.cache/compile_simlib/questa} {riviera=C:/Users/wtran013/Documents/memory_thing/memory_thing.cache/compile_simlib/riviera} {activehdl=C:/Users/wtran013/Documents/memory_thing/memory_thing.cache/compile_simlib/activehdl}] -use_ip_compiled_libs -force -quiet
+reset_run synth_1
+launch_runs impl_1 -to_step write_bitstream -jobs 6
+wait_on_run impl_1
+set_property location {3 1477 -160} [get_bd_cells ps8_0_axi_periph]
+set_property location {3 1452 98} [get_bd_cells axi_dma_0]
+set_property location {2 921 218} [get_bd_cells axis_data_fifo_0]
+set_property location {2 911 341} [get_bd_cells axis_incrementer_0]
+set_property location {1 509 127} [get_bd_cells smartconnect_0]
+set_property location {1.5 551 55} [get_bd_cells smartconnect_0]
+startgroup
+create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_0
+endgroup
+undo
+startgroup
+create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_0
+endgroup
+set_property location {2 594 -141} [get_bd_cells xlconstant_0]
+connect_bd_net [get_bd_pins xlconstant_0/dout] [get_bd_pins proc_sys_reset_0/dcm_locked]
+save_bd_design
+reset_run synth_1
+launch_runs impl_1 -to_step write_bitstream -jobs 6
+wait_on_run impl_1
+get_bd_nets -of_objects [get_bd_pins smartconnect_0/aclk]
+get_bd_nets -of_objects [get_bd_pins axi_dma_0/m_axi_mm2s_aclk]
+get_bd_nets -of_objects [get_bd_pins axi_dma_0/m_axi_s2mm_aclk]
+report_property [get_bd_intf_pins smartconnect_0/S00_AXI]
+# Locate the implementation directory dynamically
+set proj_dir [get_property DIRECTORY [current_project]]
+set proj_name [get_property NAME [current_project]]
+set impl_dir "$proj_dir/${proj_name}.runs/impl_1"
+cd $impl_dir
+set top_module [get_property TOP [current_fileset]]
+set fp [open "bitstream.bif" w]
+puts $fp "all:"
+puts $fp "\{"
+puts $fp "	\[destination_device = pl\] ${top_module}.bit"
+puts $fp "\}"
+close $fp
+# Run Bootgen to produce the .bit.bin
+exec bootgen-image bitstream.bif -arch zynqmp -o ${proj_name}.bit.bin -w
+# Run Bootgen to produce the .bit.bin
+exec bootgen -image bitstream.bif -arch zynqmp -o ${proj_name}.bit.bin -w
+exec cmd /c dir ${proj_name}.bit.bin
+puts "Bitstream binary created: $impl_dir/${proj_name}.bit.bin"
+get_bd_nets -of_objects \
+    [get_bd_pins zynq_ultra_ps_e_0/maxihpm0_fpd_aclk]
+get_bd_nets -of_objects \
+    [get_bd_pins proc_sys_reset_0/ext_reset_in]
+get_bd_nets -of_objects \
+    [get_bd_pins axi_dma_0/axi_resetn]
+clear
+get_bd_nets -of_objects \
+    [get_bd_pins proc_sys_reset_0/ext_reset_in]
+get_bd_nets -of_objects \
+    [get_bd_pins axi_dma_0/axi_resetn]
+report_property [get_bd_cells proc_sys_reset_0]
+foreach pin {
+    ps8_0_axi_periph/ARESETN
+    ps8_0_axi_periph/S00_ARESETN
+    ps8_0_axi_periph/M00_ARESETN
+    axi_dma_0/axi_resetn
+} {
+    puts "$pin -> [get_bd_nets -of_objects [get_bd_pins $pin]]"
+}
+startgroup
+create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat:2.1 xlconcat_0
+endgroup
+set_property location {3 1385 4} [get_bd_cells xlconcat_0]
+connect_bd_net [get_bd_pins axi_dma_0/mm2s_introut] [get_bd_pins xlconcat_0/In0]
+connect_bd_net [get_bd_pins axi_dma_0/s2mm_introut] [get_bd_pins xlconcat_0/In1]
+connect_bd_net [get_bd_pins xlconcat_0/dout] [get_bd_pins zynq_ultra_ps_e_0/pl_ps_irq0]
+save_bd_design
+reset_run synth_1
+launch_runs impl_1 -to_step write_bitstream -jobs 6
+wait_on_run impl_1
+# Locate the implementation directory dynamically
+set proj_dir [get_property DIRECTORY [current_project]]
+set proj_name [get_property NAME [current_project]]
+set impl_dir "$proj_dir/${proj_name}.runs/impl_1"
+cd $impl_dir
+# Build a BIF that points Bootgen at the top-level .bit
+set top_module [get_property TOP [current_fileset]]
+set fp [open "bitstream.bif" w]
+puts $fp "all:"
+puts $fp "\{"
+puts $fp "	\[destination_device = pl\] ${top_module}.bit"
+puts $fp "\}"
+close $fp
+# Run Bootgen to produce the .bit.bin
+exec bootgen -image bitstream.bif -arch zynqmp -o ${proj_name}.bit.bin -w
+exec cmd /c dir ${proj_name}.bit.bin
+puts "Bitstream binary created: $impl_dir/${proj_name}.bit.bin"
+archive_project C:/Users/wtran013/Documents/memory_thing.xpr.zip -temp_dir C:/CEG4136/Vivado/.Xil/Vivado-10436-1850-B302S105 -force -include_local_ip_cache

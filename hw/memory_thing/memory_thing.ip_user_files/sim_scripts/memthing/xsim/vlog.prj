@@ -1,0 +1,14 @@
+verilog xil_defaultlib --include "N:/Xilinx/Vivado/2022.1/data/xilinx_vip/include" --include "../../../../memory_thing.gen/sources_1/bd/memthing/ipshared/ec67/hdl" --include "../../../../memory_thing.gen/sources_1/bd/memthing/ipshared/8cdf/hdl" --include "../../../../memory_thing.gen/sources_1/bd/memthing/ipshared/f0b6/hdl/verilog" --include "../../../../memory_thing.gen/sources_1/bd/memthing/ipshared/66be/hdl/verilog" --include "../../../../memory_thing.gen/sources_1/bd/memthing/ipshared/8713/hdl" \
+"../../../bd/memthing/ip/memthing_zynq_ultra_ps_e_0_0/sim/memthing_zynq_ultra_ps_e_0_0_vip_wrapper.v" \
+"../../../bd/memthing/ip/memthing_smartconnect_0_0/bd_0/sim/bd_6797.v" \
+"../../../bd/memthing/ip/memthing_smartconnect_0_0/sim/memthing_smartconnect_0_0.v" \
+"../../../bd/memthing/ip/memthing_xbar_0/sim/memthing_xbar_0.v" \
+"../../../bd/memthing/ip/memthing_auto_ds_0/sim/memthing_auto_ds_0.v" \
+"../../../bd/memthing/ip/memthing_auto_pc_0/sim/memthing_auto_pc_0.v" \
+"../../../bd/memthing/ip/memthing_auto_ds_1/sim/memthing_auto_ds_1.v" \
+"../../../bd/memthing/ip/memthing_auto_pc_1/sim/memthing_auto_pc_1.v" \
+"../../../bd/memthing/ip/memthing_axis_data_fifo_0_0/sim/memthing_axis_data_fifo_0_0.v" \
+
+verilog xil_defaultlib "glbl.v"
+
+nosort

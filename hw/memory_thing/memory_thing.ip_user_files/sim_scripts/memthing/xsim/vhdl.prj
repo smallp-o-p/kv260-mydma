@@ -1,0 +1,7 @@
+vhdl xil_defaultlib  \
+"../../../bd/memthing/ip/memthing_proc_sys_reset_0_0/sim/memthing_proc_sys_reset_0_0.vhd" \
+"../../../bd/memthing/ip/memthing_axi_dma_0_0/sim/memthing_axi_dma_0_0.vhd" \
+"../../../bd/memthing/ip/memthing_axis_incrementer_0_0/sim/memthing_axis_incrementer_0_0.vhd" \
+"../../../bd/memthing/sim/memthing.vhd" \
+
+nosort
