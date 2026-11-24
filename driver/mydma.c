@@ -112,6 +112,7 @@ struct mydma_weight_channel {
   /* Filled in by the completion callback, read by the waiting thread. */
   enum dmaengine_tx_result result;
   u32 residue; /* bytes NOT transferred (0 = all of them) */
+  u32 t_done;
 };
 
 /*
@@ -217,6 +218,7 @@ static void mydma_weight_done(void *arg, const struct dmaengine_result *res) {
 
   c->result = res->result;
   c->residue = res->residue;
+  c->t_done = ktime_get_ns();
   complete(&c->done);
 }
 
@@ -528,16 +530,17 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
                                unsigned long arg) {
   mydma_stream_args args;
   struct dma_async_tx_descriptor *desc;
-  size_t i, locked = 0;
+  size_t i;
   u64 t0;
   dma_cookie_t cookie;
-  int ret = 0;
+  int ret = 0, j;
   unsigned long left;
-  bool do_abort = false;
+  u32 locked_mask = 0;
 
   if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
     return -EFAULT;
 
+  args.mask &= MYDMA_W_MASK;
   if (args.mask == 0 ||
       (args.flags != 0 && args.flags != MYDMA_STREAM_RESULTS)) {
     return -EINVAL;
@@ -546,8 +549,6 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
   if (args.flags == MYDMA_STREAM_RESULTS) {
     return -EOPNOTSUPP;
   }
-
-  args.mask &= MYDMA_W_MASK;
 
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     if (!(args.mask & (1u << i)))
@@ -569,8 +570,8 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
       ret = -ERESTARTSYS;
       goto unlock_lanes;
     }
+    locked_mask |= 1u << i;
 
-    locked++;
     dma_sync_single_for_device(c->dma_device, c->bus_addr, args.bytes[i],
                                DMA_TO_DEVICE);
 
@@ -579,7 +580,6 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
 
     if (!desc) {
       ret = -EIO;
-      do_abort = true;
       goto unlock_lanes;
     }
 
@@ -591,14 +591,13 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
 
     if (dma_submit_error(cookie)) {
       ret = -EIO;
-      do_abort = true;
       goto unlock_lanes;
     }
   }
 
   t0 = ktime_get_ns();
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
-    if (args.mask & (1u << i))
+    if (!(args.mask & (1u << i)))
       continue;
     dma_async_issue_pending(md->weight_channels[i].channel);
   }
@@ -607,33 +606,31 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
     struct mydma_weight_channel *c = &md->weight_channels[i];
     if (!(args.mask & (1u << i)))
       continue;
-    left = wait_for_completion_timeout(&c->done, XFER_TIMEOUT_MS);
+    left = wait_for_completion_timeout(&c->done,
+                                       msecs_to_jiffies(XFER_TIMEOUT_MS));
 
     if (left <= 0) {
       ret = left ? left : -ETIMEDOUT;
-      do_abort = true;
       goto unlock_lanes;
     }
 
     if (c->result != DMA_TRANS_NOERROR || c->residue != 0) {
       ret = -EIO;
-      do_abort = true;
       goto unlock_lanes;
     }
 
-    args.done_ns[i] = ktime_get_ns() - t0;
+    args.done_ns[i] = c->t_done - t0;
   }
 
   args.elapsed_ns = ktime_get_ns() - t0;
 
 unlock_lanes:
-  for (i = 3; i > 0; i--) {
-    if (!(args.mask & (1u << i)))
+  for (j = MYDMA_W_NUM_CHANNELS - 1; j >= 0; j--) {
+    if (!(locked_mask & (1u << j)))
       continue;
-    if (do_abort) {
-      dmaengine_terminate_sync(md->weight_channels[i].channel);
-    }
-    mutex_unlock(&md->weight_channels[locked].lock);
+    if (ret)
+      dmaengine_terminate_sync(md->weight_channels[j].channel);
+    mutex_unlock(&md->weight_channels[j].lock);
   }
 
   if (copy_to_user((void __user *)arg, &args, sizeof(mydma_stream_args))) {
