@@ -64,10 +64,9 @@ typedef struct {
  * grow later without changing this interface.
  */
 
-#define MYDMA_W_NUM_CHANNELS 4
-#define MYDMA_W_MAX_MB 512
-#define MYDMA_W_BUF_SIZE 192 << 20
-#define MYDMA_W_OFFSET(i) (i + 1) << 30
+#define MYDMA_W_NUM_CHANNELS 4u
+#define MYDMA_W_MAX_MB 512u
+#define MYDMA_W_OFFSET(i) ((i + 1) << 30)
 #define MYDMA_W_RX_OFFSET(i) (MYDMA_W_OFFSET(i) + ((__u64)MYDMA_W_MAX_MB << 20))
 
 /* Argument of MYDMA_INFO_CMD (out only). */

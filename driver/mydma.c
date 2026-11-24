@@ -90,6 +90,13 @@ module_param(max_xfer, uint, 0444);
 MODULE_PARM_DESC(max_xfer,
                  "Max bytes per read()/write() (default 16383, max 1 MiB)");
 
+static unsigned int wbuf_mb = 16u;
+module_param(wbuf_mb, uint, 0444);
+MODULE_PARM_DESC(wbuf_mb,
+                 "Size of Weight Lane buffer in MiB (default = 16MiB)");
+
+#define MYDMA_WEIGHT_BUF (wbuf_mb << 20)
+
 struct mydma_weight_channel {
   struct device *dev;
   const char *name;
@@ -536,9 +543,9 @@ static int mydma_chan_init_weight(struct device *dev,
 
   c->dma_device = c->channel->device->dev;
   c->dma_buffer = dma_alloc_noncoherent(
-      c->dma_device, MYDMA_W_BUF_SIZE, &c->bus_addr, DMA_TO_DEVICE, GFP_KERNEL);
+      c->dma_device, MYDMA_WEIGHT_BUF, &c->bus_addr, DMA_TO_DEVICE, GFP_KERNEL);
 
-  if (c->dma_buffer) {
+  if (!c->dma_buffer) {
     dma_release_channel(c->channel);
     return -ENOMEM;
   }
@@ -605,7 +612,7 @@ static void mydma_weight_channel_free(struct mydma_weight_channel *c) {
     dmaengine_terminate_sync(c->channel);
     dma_release_channel(c->channel);
   }
-  dma_free_noncoherent(c->dma_device, MYDMA_W_BUF_SIZE, c->dma_buffer,
+  dma_free_noncoherent(c->dma_device, MYDMA_WEIGHT_BUF, c->dma_buffer,
                        c->bus_addr, DMA_TO_DEVICE);
 }
 
@@ -629,21 +636,13 @@ static int mydma_probe(struct platform_device *pdev) {
   md->dev = dev;
 
   static const char *const weight_channel_names[] = {"w0", "w1", "w2", "w3"};
-  static const size_t expected_channels =
-      sizeof(weight_channel_names) / sizeof(const char *);
   size_t i;
 
-  for (i = 0; i < expected_channels; i++) {
+  for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     ret = mydma_chan_init_weight(dev, md->weight_channels + i,
                                  weight_channel_names[i]);
     if (ret)
-      break;
-  }
-
-  if (i < expected_channels) {
-    for (size_t to_free = 0; to_free < expected_channels; to_free++)
-      mydma_weight_channel_free(md->weight_channels + i);
-    return ret;
+      goto err_weights;
   }
 
   ret = mydma_chan_init(dev, &md->act_tx, "tx", &md->act_rx);
@@ -682,6 +681,9 @@ err_rx:
   mydma_chan_free(&md->act_rx);
 err_tx:
   mydma_chan_free(&md->act_tx);
+err_weights:
+  while (i--)
+    mydma_weight_channel_free(md->weight_channels + i);
   return ret;
 }
 
@@ -691,11 +693,15 @@ err_tx:
  * free the channels and buffers.
  */
 static void mydma_teardown(struct platform_device *pdev) {
+  size_t idx = 0;
   struct mydma *md = platform_get_drvdata(pdev);
 
   misc_deregister(&md->misc);
   mydma_chan_free(&md->act_rx);
   mydma_chan_free(&md->act_tx);
+
+  for (idx = 0; idx < MYDMA_W_NUM_CHANNELS; idx++)
+    mydma_weight_channel_free(md->weight_channels + idx);
 }
 
 /*
