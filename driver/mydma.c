@@ -103,7 +103,6 @@ struct mydma_weight_channel {
 
   struct dma_chan *channel;
   struct device *dma_device;
-  atomic_t irq_lost;
 
   void *dma_buffer;
   dma_addr_t bus_addr;
@@ -207,6 +206,14 @@ struct mydma {
  */
 static void mydma_done(void *arg, const struct dmaengine_result *res) {
   struct mydma_chan *c = arg;
+
+  c->result = res->result;
+  c->residue = res->residue;
+  complete(&c->done);
+}
+
+static void mydma_weight_done(void *arg, const struct dmaengine_result *res) {
+  struct mydma_weight_channel *c = arg;
 
   c->result = res->result;
   c->residue = res->residue;
@@ -502,13 +509,10 @@ static long mydma_ioctl_info(struct mydma *md, unsigned int cmd,
    *  } mydma_info_args;
    */
 
-  mydma_info_args args;
+  mydma_info_args args = {};
   unsigned i;
 
-  if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
-    return -EFAULT;
-
-  args.w_mask = 0xF; // 0x1111
+  args.w_mask = 0xF; // 0b1111
 
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     args.w_buf_bytes[i] = MYDMA_WEIGHT_BUF_SIZE;
@@ -520,23 +524,101 @@ static long mydma_ioctl_info(struct mydma *md, unsigned int cmd,
   return 0;
 }
 
-static long mydma_ioctl_stream(struct file *fp, unsigned int cmd,
+static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
                                unsigned long arg) {
-  mydma_stream_args stream_args;
-  return 0;
+  mydma_stream_args args;
+  struct dma_async_tx_descriptor *desc;
+  size_t i, locked = 0;
+  u64 t0;
+  dma_cookie_t cookie;
+  int ret = 0;
+
+  if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
+    return -EFAULT;
+
+  if (args.flags != 0 && args.flags != MYDMA_STREAM_RESULTS) {
+    return -EINVAL;
+  }
+
+  if (args.flags == MYDMA_STREAM_RESULTS) {
+    return -ENOTSUPP;
+  }
+
+  args.mask &= MYDMA_W_MASK;
+
+  for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
+    if (args.bytes[i] % 16 != 0 || args.bytes[i] == 0 ||
+        args.bytes[i] > MYDMA_WEIGHT_BUF_SIZE) {
+      return -EINVAL;
+    }
+  }
+
+  // prep each lane
+  for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
+    struct mydma_weight_channel *c = &md->weight_channels[i];
+    if (mutex_lock_interruptible(&c->lock)) {
+      ret = -ERESTARTSYS;
+      goto unlock_lanes;
+    }
+
+    locked++;
+    dma_sync_single_for_device(c->dma_device, c->bus_addr, args.bytes[i],
+                               DMA_TO_DEVICE);
+
+    desc = dmaengine_prep_slave_single(c->channel, c->bus_addr, args.bytes[i],
+                                       DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT);
+
+    if (!desc) {
+      ret = -EIO;
+      goto unlock_lanes;
+    }
+
+    desc->callback_result = mydma_weight_done;
+    desc->callback_param = c;
+
+    reinit_completion(&c->done);
+    cookie = dmaengine_submit(desc);
+
+    if (dma_submit_error(cookie)) {
+      ret = -EIO;
+      goto unlock_lanes;
+    }
+  }
+
+  t0 = ktime_get_ns();
+  for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
+    dma_async_issue_pending(md->weight_channels[i].channel);
+  }
+
+  for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
+    struct mydma_weight_channel *c = &md->weight_channels[i];
+    wait_for_completion_timeout(&c->done, XFER_TIMEOUT_MS);
+    args.done_ns[i] = ktime_get_ns() - t0;
+  }
+
+  args.elapsed_ns = ktime_get_ns() - t0;
+
+unlock_lanes:
+  while (--locked) {
+    mutex_unlock(&md->weight_channels[locked].lock);
+  }
+
+  if (copy_to_user((void __user *)arg, &args, sizeof(mydma_stream_args))) {
+    ret = -EINVAL;
+  }
+
+  return ret;
 }
 
 static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
-  struct mydma *md;
+  struct mydma *md = container_of(fp->private_data, struct mydma, misc);
   switch (cmd) {
   case MYDMA_XFER_CMD:
-    md = container_of(fp->private_data, struct mydma, misc);
     return mydma_ioctl_xfer(md, cmd, arg);
   case MYDMA_INFO_CMD:
-    md = container_of(fp->private_data, struct mydma, misc);
     return mydma_ioctl_info(md, cmd, arg);
   case MYDMA_STREAM_CMD:
-    return mydma_ioctl_stream(fp, cmd, arg);
+    return mydma_ioctl_stream(md, cmd, arg);
   default:
     break;
   }
@@ -600,7 +682,6 @@ static int mydma_chan_init_weight(struct device *dev,
                                   const char *name) {
   c->dev = dev;
   c->name = name;
-  atomic_set(&c->irq_lost, 0);
 
   c->channel = dma_request_chan(dev, name);
   if (IS_ERR(c->channel)) {
