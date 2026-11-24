@@ -1,10 +1,26 @@
-// Device tree overlay for the memory_thing PL design on the KV260
-// (PetaLinux 2022.2). Loaded by `xmutil loadapp memory_thing`.
+// Device tree overlay for the multi_hp PL design on the KV260
+// (PetaLinux 2022.2): four readers and one writer.
+//   dma_w0..w3  MM2S only, one per HP port, stream weights into the PL
+//   axi_dma_0   the activation engine: MM2S brings activations in, S2MM
+//               writes results back (on HPC0, both streams 128-bit)
+// For now hw/lane_checker.v stands in for the matmul array: it takes all
+// five input streams and writes one 16-byte result per finished transfer.
+// Loaded by `xmutil loadapp multi_hp`.
 //
-// Compile on the board:  dtc -@ -I dts -O dtb -o memory_thing.dtbo memory_thing.dts
+// Compile on the board:  dtc -@ -I dts -O dtb -o multi_hp.dtbo multi_hp.dts
 //
-// DMA values come from the XSCT-generated memory_thing.dtsi for this design
-// (scatter-gather on, 26-bit length register, 32-bit streams).
+// The addresses and interrupt numbers below assume the block design in the
+// walkthrough: weight DMA AXI-Lite at 0xA010_0000 + i * 0x1_0000, and
+// mm2s_introut of dma_w0..w3 on pl_ps_irq0[2..5] (GIC SPI 91..94). If your
+// Address Editor or xlconcat differs, change them here to match; the
+// XSCT-generated .dtsi for the new design is the reference.
+//
+// Debug variant: a weight lane can also loop back through axis_incrementer
+// into its own S2MM. Enable that DMA's write channel, add an
+// "xlnx,axi-dma-s2mm-channel" node (at +0x30, with its own interrupt) and
+// "w<i>rx" = <&dma_w<i> 1> in the mydma node; the driver and bwtest pick it up.
+//
+// Everything in the PL runs from pl_clk0 at 250 MHz in this design.
 /dts-v1/;
 /plugin/;
 
@@ -38,7 +54,7 @@
 				clocks = <&zynqmp_clk 71>;
 				clock-output-names = "fabric_clk";
 				assigned-clocks = <&zynqmp_clk 71>;
-				assigned-clock-rates = <250000000>;	/* 250 MHz */
+				assigned-clock-rates = <250000000>;	/* 250 MHz: match pl_clk0 in Vivado */
 			};
 
 			/*
@@ -54,6 +70,7 @@
 					     <12 0>, <13 0>, <14 0xa00>, <15 0x000>;
 			};
 
+			/* Activation engine (was the loopback DMA): now on S_AXI_HPC0_FPD. */
 			axi_dma_0: dma@a0000000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0000000 0x0 0x20000>;
@@ -71,7 +88,7 @@
 					compatible = "xlnx,axi-dma-mm2s-channel";
 					dma-channels = <0x1>;
 					interrupts = <0 89 4>;
-					xlnx,datawidth = <0x80>;	/* MM2S stream: 128 bits */
+					xlnx,datawidth = <0x80>;	/* MM2S stream: 128 bits (activations in) */
 					xlnx,device-id = <0x0>;
 				};
 
@@ -79,105 +96,113 @@
 					compatible = "xlnx,axi-dma-s2mm-channel";
 					dma-channels = <0x1>;
 					interrupts = <0 90 4>;
-					xlnx,datawidth = <0x80>;	/* S2MM stream: 32 bits */
+					xlnx,datawidth = <0x80>;	/* S2MM stream: 128 bits (results out) */
 					xlnx,device-id = <0x0>;
 				};
 			};
-			
+
+
+			/* Weight engine 0: MM2S only, 128-bit, masters S_AXI_HP0_FPD. */
 			dma_w0: dma@a0100000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0100000 0x0 0x10000>;
 				#dma-cells = <1>;
-				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
-				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk";
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
 				interrupt-names = "mm2s_introut";
 				interrupt-parent = <&gic>;
-				interrupts = <0 91 4>;	/* pl_ps_irq0[2]*/
+				interrupts = <0 91 4>;	/* pl_ps_irq0[2] */
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
-				xlnx,sg-length-width = <0x1a>;	/* 26 bits: max 64 MiB - 1 per transfer */
-				
+				xlnx,sg-length-width = <0x1a>;
+
 				dma-channel@a0100000 {
 					compatible = "xlnx,axi-dma-mm2s-channel";
 					dma-channels = <0x1>;
 					interrupts = <0 91 4>;
-					xlnx,datawidth = <0x80>;
+					xlnx,datawidth = <0x80>;	/* 128-bit stream */
 					xlnx,device-id = <0x1>;
 				};
 			};
-			
+
+			/* Weight engine 1: MM2S only, 128-bit, masters S_AXI_HP1_FPD. */
 			dma_w1: dma@a0110000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0110000 0x0 0x10000>;
 				#dma-cells = <1>;
-				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
-				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk";
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
 				interrupt-names = "mm2s_introut";
 				interrupt-parent = <&gic>;
-				interrupts = <0 92 4>;	/* pl_ps_irq0[3]*/
+				interrupts = <0 92 4>;	/* pl_ps_irq0[3] */
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
-				xlnx,sg-length-width = <0x1a>;	/* 26 bits: max 64 MiB - 1 per transfer */
-				
+				xlnx,sg-length-width = <0x1a>;
+
 				dma-channel@a0110000 {
 					compatible = "xlnx,axi-dma-mm2s-channel";
 					dma-channels = <0x1>;
-					interrupts = <0 91 4>;
-					xlnx,datawidth = <0x80>;
+					interrupts = <0 92 4>;
+					xlnx,datawidth = <0x80>;	/* 128-bit stream */
 					xlnx,device-id = <0x2>;
 				};
 			};
 
+			/* Weight engine 2: MM2S only, 128-bit, masters S_AXI_HP2_FPD. */
 			dma_w2: dma@a0120000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0120000 0x0 0x10000>;
 				#dma-cells = <1>;
-				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
-				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk";
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
 				interrupt-names = "mm2s_introut";
 				interrupt-parent = <&gic>;
-				interrupts = <0 93 4>;	/* pl_ps_irq0[2]*/
+				interrupts = <0 93 4>;	/* pl_ps_irq0[4] */
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
-				xlnx,sg-length-width = <0x1a>;	/* 26 bits: max 64 MiB - 1 per transfer */
-				
+				xlnx,sg-length-width = <0x1a>;
+
 				dma-channel@a0120000 {
 					compatible = "xlnx,axi-dma-mm2s-channel";
 					dma-channels = <0x1>;
 					interrupts = <0 93 4>;
-					xlnx,datawidth = <0x80>;
+					xlnx,datawidth = <0x80>;	/* 128-bit stream */
 					xlnx,device-id = <0x3>;
 				};
 			};
 
+			/* Weight engine 3: MM2S only, 128-bit, masters S_AXI_HP3_FPD. */
 			dma_w3: dma@a0130000 {
 				compatible = "xlnx,axi-dma-7.1", "xlnx,axi-dma-1.00.a";
 				reg = <0x0 0xa0130000 0x0 0x10000>;
 				#dma-cells = <1>;
-				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
-				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk";
+				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
 				interrupt-names = "mm2s_introut";
 				interrupt-parent = <&gic>;
-				interrupts = <0 91 4>;	/* pl_ps_irq0[2]*/
+				interrupts = <0 94 4>;	/* pl_ps_irq0[5] */
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
-				xlnx,sg-length-width = <0x1a>;	/* 26 bits: max 64 MiB - 1 per transfer */
-				
+				xlnx,sg-length-width = <0x1a>;
+
 				dma-channel@a0130000 {
 					compatible = "xlnx,axi-dma-mm2s-channel";
 					dma-channels = <0x1>;
 					interrupts = <0 94 4>;
-					xlnx,datawidth = <0x80>;
+					xlnx,datawidth = <0x80>;	/* 128-bit stream */
 					xlnx,device-id = <0x4>;
 				};
 			};
 
-
-			/* Binds mydma.ko to the DMA's two channels; creates /dev/mydma. */
+			/*
+			 * Binds mydma.ko: tx/rx = the activation engine (activations in,
+			 * results out), w0..w3 = the weight engines. Drop any w<i> you
+			 * haven't built yet; the driver skips missing names.
+			 */
 			mydma {
 				compatible = "acme,mydma";
 				dmas = <&axi_dma_0 0>, <&axi_dma_0 1>,
-						<&dma_w0 0>, <&dma_w1 0>, <&dma_w2 0>, <&dma_w3 0>;
+				       <&dma_w0 0>, <&dma_w1 0>, <&dma_w2 0>, <&dma_w3 0>;
 				dma-names = "tx", "rx", "w0", "w1", "w2", "w3";
 			};
 		};

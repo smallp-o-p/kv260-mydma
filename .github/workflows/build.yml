@@ -19,7 +19,7 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             gcc-11-aarch64-linux-gnu g++-aarch64-linux-gnu make bc flex bison \
-            libssl-dev libelf-dev device-tree-compiler
+            libssl-dev libelf-dev device-tree-compiler iverilog
 
       # The prepared kernel tree only changes when the tag or board config does.
       - name: Cache kernel tree
@@ -34,13 +34,23 @@ jobs:
       - name: Package Kria app
         run: bash hw/package.sh
 
+      # No bitstream for multi_hp in the repo yet: just check its overlay compiles.
+      - name: Simulate lane_checker
+        run: |
+          iverilog -g2005 -o /tmp/tb hw/lane_checker.v hw/tb/tb_lane_checker.v
+          vvp /tmp/tb | tee /tmp/tb.log
+          grep -q '^PASS' /tmp/tb.log
+
+      - name: Check multi_hp overlay
+        run: dtc -@ -q -I dts -O dtb -o /dev/null hw/multi_hp.dts
+
       - name: Build user-space test
         run: make -C app
 
       - name: Collect board files
         run: |
           mkdir -p out/board
-          cp driver/mydma.ko app/dmatest app/dmatest_rw out/board/
+          cp driver/mydma.ko app/dmatest app/dmatest_rw app/bwtest out/board/
           cp -r out/memory_thing out/board/
 
       - uses: actions/upload-artifact@v4

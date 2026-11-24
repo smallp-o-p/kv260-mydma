@@ -60,7 +60,9 @@
 #include <linux/dmaengine.h>   /* the dmaengine client API */
 #include <linux/fs.h>          /* struct file_operations */
 #include <linux/ioctl.h>
+#include <linux/bitops.h>     /* hweight32() */
 #include <linux/jiffies.h>    /* msecs_to_jiffies(): kernel time units */
+#include <linux/ktime.h>      /* ktime_get_ns(): timestamps for MYDMA_STREAM */
 #include <linux/miscdevice.h> /* the easy way to get a /dev node */
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -89,6 +91,17 @@ static unsigned int max_xfer = 16383;
 module_param(max_xfer, uint, 0444);
 MODULE_PARM_DESC(max_xfer,
                  "Max bytes per read()/write() (default 16383, max 1 MiB)");
+
+/*
+ * Size of each weight-engine buffer (w0..w3), in MiB. They come out of the
+ * CMA pool (256 MiB by default on this kernel). With loopback lanes there
+ * are eight buffers (w0..w3 and w0rx..w3rx), so 8 x 16 MiB = 128 MiB still
+ * fits without touching the boot arguments. Raise it after adding cma=...
+ */
+static unsigned int wbuf_mb = 16;
+module_param(wbuf_mb, uint, 0444);
+MODULE_PARM_DESC(wbuf_mb,
+                 "Buffer size per weight engine w0..w3 (and per w<i>rx), MiB (default 16)");
 
 /*
  * Everything we keep per direction. There are two of these: tx (MM2S,
@@ -158,6 +171,9 @@ struct mydma_chan {
   /* Filled in by the completion callback, read by the waiting thread. */
   enum dmaengine_tx_result result;
   u32 residue; /* bytes NOT transferred (0 = all of them) */
+
+  size_t buf_size; /* bytes in buf: MYDMA_BUF_SIZE for tx/rx, wbuf_mb for w* */
+  u64 t_done;      /* ktime_get_ns() when the last transfer completed */
 };
 
 /* The whole device: both directions plus the /dev node. */
@@ -165,6 +181,20 @@ struct mydma {
   struct device *dev;
   struct mydma_chan tx;
   struct mydma_chan rx;
+  /*
+   * Weight engines: one MM2S-only AXI DMA per HP port. Optional: only the
+   * ones named in the overlay's dma-names ("w0".."w3") exist, and bit i of
+   * w_mask says whether w[i] does. The loopback design has none.
+   *
+   * w_rx[i] ("w<i>rx") is the optional S2MM side of the same AXI DMA, for
+   * a functional test lane: MM2S -> axis_incrementer -> S2MM. When it
+   * exists, MYDMA_STREAM_CMD arms it before starting w[i], and checks
+   * that every byte came back.
+   */
+  struct mydma_chan w[MYDMA_NUM_W];
+  struct mydma_chan w_rx[MYDMA_NUM_W];
+  unsigned int w_mask;
+  unsigned int w_rx_mask;
   struct miscdevice misc; /* embedded, so container_of() can find us */
 };
 
@@ -184,6 +214,7 @@ static void mydma_done(void *arg, const struct dmaengine_result *res) {
 
   c->result = res->result;
   c->residue = res->residue;
+  c->t_done = ktime_get_ns();
   complete(&c->done);
 }
 
@@ -233,14 +264,15 @@ static void mydma_abort(struct mydma_chan *c) {
    * touches c->done or c->buf after we return.
    */
   dmaengine_terminate_sync(c->chan);
-  atomic_set(&c->peer->irq_lost, 1);
+  if (c->peer) /* MM2S-only weight engines have no peer */
+    atomic_set(&c->peer->irq_lost, 1);
 }
 
 /*
  * Initiates the DMA channel, and submits the transfer
  */
-static int mydma_xfer_start(struct mydma_chan *c, size_t len,
-                            enum dma_transfer_direction dir) {
+static int mydma_xfer_prep(struct mydma_chan *c, size_t len,
+                           enum dma_transfer_direction dir) {
   struct dma_async_tx_descriptor *desc;
   dma_cookie_t cookie;
   int ret;
@@ -282,6 +314,17 @@ static int mydma_xfer_start(struct mydma_chan *c, size_t len,
   if (dma_submit_error(cookie))
     return -EIO;
 
+  return 0;
+}
+
+/* Prepare, submit and start one transfer. */
+static int mydma_xfer_start(struct mydma_chan *c, size_t len,
+                            enum dma_transfer_direction dir) {
+  int ret = mydma_xfer_prep(c, len, dir);
+
+  if (ret)
+    return ret;
+
   /*
    * Step 3, ISSUE: "start everything pending now". This is the moment
    * xilinx_dma writes the AXI DMA's registers and the channel starts:
@@ -291,6 +334,54 @@ static int mydma_xfer_start(struct mydma_chan *c, size_t len,
   dma_async_issue_pending(c->chan);
 
   return 0;
+}
+
+/*
+ * Arm an S2MM channel for n separate packets of `chunk` bytes each, into
+ * consecutive slots of its buffer (used for lane_checker's result beats).
+ *
+ * One descriptor per packet, not one descriptor with n segments: xilinx_dma
+ * sets the interrupt threshold to the number of descriptors issued
+ * together, and completes the whole active list on the first interrupt. So
+ * n descriptors give one interrupt after the n-th packet, while a single
+ * n-segment descriptor would "complete" after the first packet.
+ * Only the last descriptor gets our callback.
+ */
+static int mydma_xfer_start_packets(struct mydma_chan *c, unsigned int n,
+                                    size_t chunk) {
+  struct dma_async_tx_descriptor *desc;
+  unsigned int k;
+  int ret;
+
+  if (!n || n * chunk > c->buf_size)
+    return -EINVAL;
+
+  if (atomic_xchg(&c->irq_lost, 0) || !c->chan) {
+    ret = mydma_rearm(c);
+    if (ret)
+      return ret;
+  }
+
+  reinit_completion(&c->done);
+  for (k = 0; k < n; k++) {
+    desc = dmaengine_prep_slave_single(c->chan, c->buf_dma + k * chunk, chunk,
+                                       DMA_DEV_TO_MEM,
+                                       DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+    if (!desc)
+      goto fail;
+    if (k == n - 1) {
+      desc->callback_result = mydma_done;
+      desc->callback_param = c;
+    }
+    if (dma_submit_error(dmaengine_submit(desc)))
+      goto fail;
+  }
+  dma_async_issue_pending(c->chan);
+  return 0;
+
+fail:
+  dmaengine_terminate_sync(c->chan); /* drop the ones already submitted */
+  return -EIO;
 }
 
 static ssize_t mydma_xfer_wait_for_completion(struct mydma_chan *c,
@@ -410,12 +501,9 @@ static ssize_t mydma_read(struct file *f, char __user *ubuf, size_t count,
     __u32 rx_bytes; // receive from S2MM
   } mydma_xfer_args;
 */
-static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
+static long mydma_ioctl_xfer(struct file *fp, unsigned long arg) {
   mydma_xfer_args args;
   int ret;
-
-  if (cmd != MYDMA_XFER_CMD)
-    return -ENOTTY;
 
   if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
     return -EFAULT;
@@ -469,22 +557,225 @@ unlock_rx:
   return ret;
 }
 
+/* MYDMA_INFO_CMD: which weight engines exist and how big their buffers are. */
+static long mydma_ioctl_info(struct mydma *md, unsigned long arg) {
+  mydma_info_args a = {0};
+  unsigned int i;
+
+  a.w_mask = md->w_mask;
+  a.w_rx_mask = md->w_rx_mask;
+  for (i = 0; i < MYDMA_NUM_W; i++)
+    if (md->w_mask & BIT(i))
+      a.w_buf_bytes[i] = md->w[i].buf_size;
+
+  if (copy_to_user((void __user *)arg, &a, sizeof(a)))
+    return -EFAULT;
+  return 0;
+}
+
+/*
+ * MYDMA_STREAM_CMD: run one MM2S transfer on every weight engine in
+ * a.mask AT THE SAME TIME, and report how long each took.
+ *
+ * The engines are independent AXI DMA cores on separate HP ports, so
+ * running them in parallel is just: prepare and submit a descriptor on
+ * each, then issue_pending on each back to back (the hardware starts
+ * within a few microseconds of each other), then wait for all of them.
+ * No threads are needed in the kernel or in user space.
+ *
+ * A lane that also has an S2MM channel (w<i>rx: a loopback test lane) gets
+ * it armed for the same byte count BEFORE any MM2S starts, as in
+ * MYDMA_XFER_CMD, and the lane counts as done when its S2MM finishes.
+ *
+ * With MYDMA_STREAM_RESULTS, the activation engine's S2MM (rx) is also
+ * armed, for one 16-byte result beat per lane in the mask: the shape of
+ * the real design, four readers in and one writer out. The beats land in
+ * the rx buffer in the order the lanes finish, and elapsed_ns runs until
+ * the last one is in memory.
+ *
+ * Each channel has its own mutex. rx is taken first (MYDMA_XFER_CMD also
+ * takes rx before tx, so the order is consistent), then the weight
+ * channels in index order. Callers using different engines don't block
+ * each other.
+ */
+static long mydma_ioctl_stream(struct mydma *md, unsigned long arg) {
+  mydma_stream_args a;
+  struct mydma_chan *chans[2 * MYDMA_NUM_W]; /* MM2S 0..3, then S2MM 0..3 */
+  unsigned int i, locked = 0, queued = 0, waiting = 0;
+  unsigned int n_res = 0;
+  bool results, rx_locked = false, rx_armed = false;
+  u64 t0, t_end = 0;
+  long ret = 0;
+
+  if (copy_from_user(&a, (void __user *)arg, sizeof(a)))
+    return -EFAULT;
+
+  if (!a.mask || (a.mask & ~md->w_mask) || (a.flags & ~MYDMA_STREAM_RESULTS))
+    return -EINVAL;
+  results = a.flags & MYDMA_STREAM_RESULTS;
+  if (results)
+    n_res = hweight32(a.mask);
+  for (i = 0; i < MYDMA_NUM_W; i++)
+    if ((a.mask & BIT(i)) &&
+        (!a.bytes[i] || a.bytes[i] > md->w[i].buf_size))
+      return -EINVAL;
+
+  /* chans[k]: k < NUM_W is w[k] (MM2S), k >= NUM_W is w_rx[k - NUM_W]. */
+  for (i = 0; i < 2 * MYDMA_NUM_W; i++) {
+    unsigned int lane = i % MYDMA_NUM_W;
+    bool rx = i >= MYDMA_NUM_W;
+
+    chans[i] = NULL;
+    if (!(a.mask & BIT(lane)) || (rx && !(md->w_rx_mask & BIT(lane))))
+      continue;
+    chans[i] = rx ? &md->w_rx[lane] : &md->w[lane];
+  }
+
+  if (results) {
+    if (mutex_lock_interruptible(&md->rx.lock))
+      return -ERESTARTSYS;
+    rx_locked = true;
+  }
+  for (i = 0; i < 2 * MYDMA_NUM_W; i++) {
+    if (!chans[i])
+      continue;
+    if (mutex_lock_interruptible(&chans[i]->lock)) {
+      ret = -ERESTARTSYS;
+      goto unlock;
+    }
+    locked |= BIT(i);
+  }
+
+  /*
+   * Arm every S2MM first (issue_pending on S2MM only arms it: no data
+   * moves until MM2S sends some), then queue every MM2S.
+   */
+  if (results) {
+    ret = mydma_xfer_start_packets(&md->rx, n_res, MYDMA_RESULT_BYTES);
+    if (ret)
+      goto cancel;
+    rx_armed = true;
+  }
+  for (i = MYDMA_NUM_W; i < 2 * MYDMA_NUM_W; i++) {
+    if (!chans[i])
+      continue;
+    ret = mydma_xfer_start(chans[i], a.bytes[i - MYDMA_NUM_W], DMA_DEV_TO_MEM);
+    if (ret)
+      goto cancel;
+    queued |= BIT(i);
+  }
+  for (i = 0; i < MYDMA_NUM_W; i++) {
+    if (!chans[i])
+      continue;
+    ret = mydma_xfer_prep(chans[i], a.bytes[i], DMA_MEM_TO_DEV);
+    if (ret)
+      goto cancel;
+    queued |= BIT(i);
+  }
+
+  /* Now start every MM2S, as close together as possible. */
+  t0 = ktime_get_ns();
+  for (i = 0; i < MYDMA_NUM_W; i++)
+    if (chans[i])
+      dma_async_issue_pending(chans[i]->chan);
+  waiting = queued;
+  queued = 0;
+
+  /*
+   * Wait for every channel. On the first failure, stop the ones still
+   * running so none is left busy with its mutex released.
+   */
+  for (i = 0; i < 2 * MYDMA_NUM_W; i++) {
+    unsigned int lane = i % MYDMA_NUM_W;
+    ssize_t got;
+
+    if (!(waiting & BIT(i)))
+      continue;
+    waiting &= ~BIT(i);
+    got = mydma_xfer_wait_for_completion(chans[i], a.bytes[lane]);
+    if (got < 0 || (size_t)got != a.bytes[lane]) {
+      ret = got < 0 ? got : -EIO;
+      goto cancel;
+    }
+    /* A loopback lane's S2MM finishes last, so it overwrites the MM2S time. */
+    a.done_ns[lane] = chans[i]->t_done - t0;
+    t_end = max(t_end, chans[i]->t_done);
+  }
+  if (rx_armed) {
+    ssize_t got = mydma_xfer_wait_for_completion(&md->rx, MYDMA_RESULT_BYTES);
+
+    rx_armed = false; /* waited for: aborted already on timeout */
+    if (got != MYDMA_RESULT_BYTES) {
+      ret = got < 0 ? got : -EIO;
+      goto unlock;
+    }
+    t_end = max(t_end, md->rx.t_done);
+  }
+  a.elapsed_ns = t_end - t0;
+  goto unlock;
+
+cancel:
+  /* Channels queued but never started, or started and not yet waited for. */
+  for (i = 0; i < 2 * MYDMA_NUM_W; i++)
+    if ((queued | waiting) & BIT(i))
+      mydma_abort(chans[i]);
+  if (rx_armed)
+    mydma_abort(&md->rx);
+
+unlock:
+  for (i = 0; i < 2 * MYDMA_NUM_W; i++)
+    if (locked & BIT(i))
+      mutex_unlock(&chans[i]->lock);
+  if (rx_locked)
+    mutex_unlock(&md->rx.lock);
+
+  if (!ret && copy_to_user((void __user *)arg, &a, sizeof(a)))
+    return -EFAULT;
+  return ret;
+}
+
+static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
+  struct mydma *md = container_of(fp->private_data, struct mydma, misc);
+
+  switch (cmd) {
+  case MYDMA_XFER_CMD:
+    return mydma_ioctl_xfer(fp, arg);
+  case MYDMA_INFO_CMD:
+    return mydma_ioctl_info(md, arg);
+  case MYDMA_STREAM_CMD:
+    return mydma_ioctl_stream(md, arg);
+  default:
+    return -ENOTTY;
+  }
+}
+
 static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
   struct mydma *md = container_of(fp->private_data, struct mydma, misc);
-  struct mydma_chan *p_channel;
+  struct mydma_chan *p_channel = NULL;
+  unsigned int i;
 
   if (vma->vm_pgoff == 0) {
     p_channel = &md->tx;
   } else if (vma->vm_pgoff == (MYDMA_BUF_SIZE >> PAGE_SHIFT)) { // rx
     p_channel = &md->rx;
   } else {
-    return -EINVAL;
+    for (i = 0; i < MYDMA_NUM_W; i++) {
+      if ((md->w_mask & BIT(i)) &&
+          vma->vm_pgoff == (MYDMA_W_OFFSET(i) >> PAGE_SHIFT))
+        p_channel = &md->w[i];
+      if ((md->w_rx_mask & BIT(i)) &&
+          vma->vm_pgoff == (MYDMA_W_RX_OFFSET(i) >> PAGE_SHIFT))
+        p_channel = &md->w_rx[i];
+    }
   }
+  if (!p_channel)
+    return -EINVAL;
 
   vma->vm_pgoff = 0;
 
+  /* Fails with -ENXIO if the mapping is larger than the buffer. */
   return dma_mmap_coherent(p_channel->dma_dev, vma, p_channel->buf,
-                           p_channel->buf_dma, MYDMA_BUF_SIZE);
+                           p_channel->buf_dma, p_channel->buf_size);
 }
 
 /*
@@ -511,10 +802,12 @@ static const struct file_operations mydma_fops = {
  * its buffer. Called twice: once for "tx", once for "rx".
  */
 static int mydma_chan_init(struct device *dev, struct mydma_chan *c,
-                           const char *name, struct mydma_chan *peer) {
+                           const char *name, struct mydma_chan *peer,
+                           size_t size, bool optional) {
   c->dev = dev;
   c->name = name;
   c->peer = peer;
+  c->buf_size = size;
   atomic_set(&c->irq_lost, 0);
 
   /*
@@ -525,6 +818,11 @@ static int mydma_chan_init(struct device *dev, struct mydma_chan *c,
    * dev_err_probe() logs an error only for real failures, not deferral.
    */
   c->chan = dma_request_chan(dev, name);
+  /* -ENODEV: the name isn't in dma-names. Fine for the optional w0..w3. */
+  if (optional && PTR_ERR_OR_ZERO(c->chan) == -ENODEV) {
+    c->chan = NULL;
+    return -ENODEV;
+  }
   if (IS_ERR(c->chan))
     return dev_err_probe(dev, PTR_ERR(c->chan),
                          "failed to get '%s' DMA channel\n", name);
@@ -537,9 +835,12 @@ static int mydma_chan_init(struct device *dev, struct mydma_chan *c,
    */
   c->dma_dev = c->chan->device->dev;
   c->buf =
-      dma_alloc_coherent(c->dma_dev, MYDMA_BUF_SIZE, &c->buf_dma, GFP_KERNEL);
+      dma_alloc_coherent(c->dma_dev, size, &c->buf_dma, GFP_KERNEL);
   if (!c->buf) {
     dma_release_channel(c->chan);
+    c->chan = NULL;
+    dev_err(dev, "no memory for '%s' buffer (%zu MiB); CMA too small?\n",
+            name, size >> 20);
     return -ENOMEM;
   }
 
@@ -554,7 +855,7 @@ static void mydma_chan_free(struct mydma_chan *c) {
     dmaengine_terminate_sync(c->chan); /* cancel anything still queued */
     dma_release_channel(c->chan);
   }
-  dma_free_coherent(c->dma_dev, MYDMA_BUF_SIZE, c->buf, c->buf_dma);
+  dma_free_coherent(c->dma_dev, c->buf_size, c->buf, c->buf_dma);
 }
 
 /*
@@ -565,6 +866,7 @@ static void mydma_chan_free(struct mydma_chan *c) {
 static int mydma_probe(struct platform_device *pdev) {
   struct device *dev = &pdev->dev;
   struct mydma *md;
+  unsigned int i;
   int ret;
 
   /*
@@ -576,13 +878,47 @@ static int mydma_probe(struct platform_device *pdev) {
     return -ENOMEM;
   md->dev = dev;
 
-  ret = mydma_chan_init(dev, &md->tx, "tx", &md->rx);
+  ret = mydma_chan_init(dev, &md->tx, "tx", &md->rx, MYDMA_BUF_SIZE, false);
   if (ret)
     return ret;
 
-  ret = mydma_chan_init(dev, &md->rx, "rx", &md->tx);
+  ret = mydma_chan_init(dev, &md->rx, "rx", &md->tx, MYDMA_BUF_SIZE, false);
   if (ret)
     goto err_tx;
+
+  /* The weight engines, if the overlay names any. */
+  if (!wbuf_mb || wbuf_mb > MYDMA_W_MAX_MB) {
+    dev_err(dev, "wbuf_mb must be 1..%d\n", MYDMA_W_MAX_MB);
+    ret = -EINVAL;
+    goto err_rx;
+  }
+  for (i = 0; i < MYDMA_NUM_W; i++) {
+    static const char *const names[MYDMA_NUM_W] = {"w0", "w1", "w2", "w3"};
+    static const char *const rx_names[MYDMA_NUM_W] = {"w0rx", "w1rx", "w2rx",
+                                                      "w3rx"};
+
+    ret = mydma_chan_init(dev, &md->w[i], names[i], NULL,
+                          (size_t)wbuf_mb << 20, true);
+    if (ret == -ENODEV)
+      continue;
+    if (ret)
+      goto err_w;
+    md->w_mask |= BIT(i);
+
+    /*
+     * Loopback lane: the S2MM channel of the same AXI DMA core. The two
+     * are peers for the reset quirk, like tx and rx.
+     */
+    ret = mydma_chan_init(dev, &md->w_rx[i], rx_names[i], &md->w[i],
+                          (size_t)wbuf_mb << 20, true);
+    if (ret == -ENODEV)
+      continue;
+    if (ret)
+      goto err_w;
+    md->w[i].peer = &md->w_rx[i];
+    md->w_rx_mask |= BIT(i);
+  }
+  ret = 0;
 
   /*
    * A misc device is a character device with major number 10 and a
@@ -598,16 +934,28 @@ static int mydma_probe(struct platform_device *pdev) {
 
   ret = misc_register(&md->misc);
   if (ret)
-    goto err_rx;
+    goto err_w;
 
   /* Stash our struct so remove() can find it from the platform device. */
   platform_set_drvdata(pdev, md);
   dev_info(dev, "ready: tx=%s rx=%s, max_xfer=%u, /dev/%s\n",
            dma_chan_name(md->tx.chan), dma_chan_name(md->rx.chan), max_xfer,
            DRV_NAME);
+  for (i = 0; i < MYDMA_NUM_W; i++)
+    if (md->w_mask & BIT(i))
+      dev_info(dev, "w%u=%s, %u MiB buffer at %pad%s\n", i,
+               dma_chan_name(md->w[i].chan), wbuf_mb, &md->w[i].buf_dma,
+               (md->w_rx_mask & BIT(i)) ? ", loopback via w-rx" : "");
   return 0;
 
   /* Error unwinding: each label undoes the steps that succeeded before it. */
+err_w:
+  for (i = 0; i < MYDMA_NUM_W; i++) {
+    if (md->w_rx_mask & BIT(i))
+      mydma_chan_free(&md->w_rx[i]);
+    if (md->w_mask & BIT(i))
+      mydma_chan_free(&md->w[i]);
+  }
 err_rx:
   mydma_chan_free(&md->rx);
 err_tx:
@@ -623,7 +971,15 @@ err_tx:
 static void mydma_teardown(struct platform_device *pdev) {
   struct mydma *md = platform_get_drvdata(pdev);
 
+  unsigned int i;
+
   misc_deregister(&md->misc);
+  for (i = 0; i < MYDMA_NUM_W; i++) {
+    if (md->w_rx_mask & BIT(i))
+      mydma_chan_free(&md->w_rx[i]);
+    if (md->w_mask & BIT(i))
+      mydma_chan_free(&md->w[i]);
+  }
   mydma_chan_free(&md->rx);
   mydma_chan_free(&md->tx);
 }

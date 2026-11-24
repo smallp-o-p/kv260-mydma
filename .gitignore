@@ -23,6 +23,7 @@ modules.order
 # clangd
 compile_commands.json
 .cache/
+/app/bwtest
 
 hw/memory_thing/*.cache/
 hw/memory_thing/*.gen/

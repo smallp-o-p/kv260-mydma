@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Package the PL design as a Kria app folder, ready to copy to the board.
 #
-# Usage:  bash hw/package.sh [design.bit] [outdir]
+# Usage:  [APP=name] bash hw/package.sh [design.bit] [outdir]
+#   APP         default: memory_thing (uses hw/$APP.dts); multi_hp for the
+#               four-weight-engine shell
 #   design.bit  default: hw/memthing_wrapper.bit
 #   outdir      default: out/
-# Result: <outdir>/memory_thing/{memory_thing.bit.bin, memory_thing.dtbo, shell.json}
+# Result: <outdir>/$APP/{$APP.bit.bin, $APP.dtbo, shell.json}
 # On the board: sudo cp -r memory_thing /lib/firmware/xilinx/ && sudo xmutil loadapp memory_thing
 #
 # Needs python3 and dtc (`sudo apt install device-tree-compiler`).
@@ -14,7 +16,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(dirname "$HERE")
 BIT=${1:-$HERE/memthing_wrapper.bit}
 OUT=${2:-$ROOT/out}
-APP=memory_thing            # folder name, .bit.bin name and .dtbo name must match
+APP=${APP:-memory_thing}    # folder name, .bit.bin name and .dtbo name must match
 
 mkdir -p "$OUT/$APP"
 python3 "$ROOT/tools/bit2bin.py" "$BIT" "$OUT/$APP/$APP.bit.bin"
