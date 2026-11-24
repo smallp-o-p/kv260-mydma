@@ -500,11 +500,11 @@ static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
   struct mydma_chan *p_channel = NULL;
   struct mydma_weight_channel *p_weight_channel = NULL;
 
-  int i = 0;
-  _Bool is_weight_channel_offset = false;
+  unsigned int i = 0;
+  bool is_weight_channel_offset = false;
 
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
-    if (vma->vm_pgoff == MYDMA_W_RX_OFFSET(i)) {
+    if (vma->vm_pgoff == (MYDMA_W_OFFSET(i) >> PAGE_SHIFT)) {
       is_weight_channel_offset = true;
       break;
     }
@@ -523,7 +523,8 @@ static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
   vma->vm_pgoff = 0;
 
   if (is_weight_channel_offset) {
-    return dma_mmap_pages(p_weight_channel->dev, vma, MYDMA_WEIGHT_BUF_SIZE,
+    return dma_mmap_pages(p_weight_channel->dma_device, vma,
+                          MYDMA_WEIGHT_BUF_SIZE,
                           virt_to_page(p_weight_channel->dma_buffer));
   }
 

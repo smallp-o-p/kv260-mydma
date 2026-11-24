@@ -51,11 +51,6 @@ typedef struct {
  *   w0 = mmap(NULL, info.w_buf_bytes[0], PROT_READ | PROT_WRITE, MAP_SHARED,
  *             fd, MYDMA_W_OFFSET(0));
  *
- * A lane can also be a loopback test lane: the same AXI DMA with its S2MM
- * channel enabled and named "w<i>rx", and a stream block such as
- * axis_incrementer between MM2S and S2MM. Its receive buffer (same size)
- * is mapped at MYDMA_W_RX_OFFSET(i). MYDMA_STREAM_CMD arms it automatically.
- *
  * The offsets leave MYDMA_W_MAX_MB of room per buffer, so the buffers can
  * grow later without changing this interface.
  */
@@ -63,12 +58,10 @@ typedef struct {
 #define MYDMA_W_NUM_CHANNELS 4u
 #define MYDMA_W_MAX_MB 512u
 #define MYDMA_W_OFFSET(i) (((__u64)(i) + 1) << 30)
-#define MYDMA_W_RX_OFFSET(i) (MYDMA_W_OFFSET(i) + ((__u64)MYDMA_W_MAX_MB << 20))
 
 /* Argument of MYDMA_INFO_CMD (out only). */
 typedef struct {
-  __u32 w_mask;    /* bit i set = engine w<i> exists */
-  __u32 w_rx_mask; /* bit i set = w<i> is a loopback lane */
+  __u32 w_mask;                            /* bit i set = engine w<i> exists */
   __u32 w_buf_bytes[MYDMA_W_NUM_CHANNELS]; /* size of each engine's buffer(s) */
 } mydma_info_args;
 
