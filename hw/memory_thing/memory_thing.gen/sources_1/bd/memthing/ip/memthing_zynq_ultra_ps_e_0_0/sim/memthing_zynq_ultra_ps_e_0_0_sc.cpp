@@ -86,7 +86,7 @@ memthing_zynq_ultra_ps_e_0_0_sc::memthing_zynq_ultra_ps_e_0_0_sc(const sc_core::
     model_param_props.addLong("C_USE_DEBUG_TEST", "0");
     model_param_props.addLong("C_SD0_INTERNAL_BUS_WIDTH", "5");
     model_param_props.addLong("C_SD1_INTERNAL_BUS_WIDTH", "5");
-    model_param_props.addLong("C_NUM_F2P_0_INTR_INPUTS", "2");
+    model_param_props.addLong("C_NUM_F2P_0_INTR_INPUTS", "6");
     model_param_props.addLong("C_NUM_F2P_1_INTR_INPUTS", "1");
     model_param_props.addLong("C_EMIO_GPIO_WIDTH", "1");
     model_param_props.addLong("C_NUM_FABRIC_RESETS", "1");
@@ -95,7 +95,7 @@ memthing_zynq_ultra_ps_e_0_0_sc::memthing_zynq_ultra_ps_e_0_0_sc(const sc_core::
     model_param_props.addString("C_EN_FIFO_ENET2", "0");
     model_param_props.addString("C_EN_FIFO_ENET3", "0");
     model_param_props.addString("C_PL_CLK0_BUF", "TRUE");
-    model_param_props.addString("C_PL_CLK1_BUF", "TRUE");
+    model_param_props.addString("C_PL_CLK1_BUF", "FALSE");
     model_param_props.addString("C_PL_CLK2_BUF", "FALSE");
     model_param_props.addString("C_PL_CLK3_BUF", "FALSE");
     model_param_props.addString("COMPONENT_NAME", "memthing_zynq_ultra_ps_e_0_0");
@@ -107,8 +107,16 @@ memthing_zynq_ultra_ps_e_0_0_sc::memthing_zynq_ultra_ps_e_0_0_sc(const sc_core::
   M_AXI_HPM0_FPD_wr_socket = mp_impl->M_AXI_HPM0_FPD_wr_socket;
   M_AXI_HPM1_FPD_rd_socket = mp_impl->M_AXI_HPM1_FPD_rd_socket;
   M_AXI_HPM1_FPD_wr_socket = mp_impl->M_AXI_HPM1_FPD_wr_socket;
+  S_AXI_HPC0_FPD_rd_socket = mp_impl->S_AXI_HPC0_FPD_rd_socket;
+  S_AXI_HPC0_FPD_wr_socket = mp_impl->S_AXI_HPC0_FPD_wr_socket;
   S_AXI_HP0_FPD_rd_socket = mp_impl->S_AXI_HP0_FPD_rd_socket;
   S_AXI_HP0_FPD_wr_socket = mp_impl->S_AXI_HP0_FPD_wr_socket;
+  S_AXI_HP1_FPD_rd_socket = mp_impl->S_AXI_HP1_FPD_rd_socket;
+  S_AXI_HP1_FPD_wr_socket = mp_impl->S_AXI_HP1_FPD_wr_socket;
+  S_AXI_HP2_FPD_rd_socket = mp_impl->S_AXI_HP2_FPD_rd_socket;
+  S_AXI_HP2_FPD_wr_socket = mp_impl->S_AXI_HP2_FPD_wr_socket;
+  S_AXI_HP3_FPD_rd_socket = mp_impl->S_AXI_HP3_FPD_rd_socket;
+  S_AXI_HP3_FPD_wr_socket = mp_impl->S_AXI_HP3_FPD_wr_socket;
 }
 
 memthing_zynq_ultra_ps_e_0_0_sc::~memthing_zynq_ultra_ps_e_0_0_sc()

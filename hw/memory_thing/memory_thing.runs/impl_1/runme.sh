@@ -24,7 +24,7 @@ else
 fi
 export LD_LIBRARY_PATH
 
-HD_PWD='C:/Users/wtran013/Documents/memory_thing/memory_thing.runs/impl_1'
+HD_PWD='C:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.runs/impl_1'
 cd "$HD_PWD"
 
 HD_LOG=runme.log

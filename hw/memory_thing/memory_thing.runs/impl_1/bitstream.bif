@@ -1,4 +1,0 @@
-all:
-{
-	[destination_device = pl] memthing_wrapper.bit
-}
