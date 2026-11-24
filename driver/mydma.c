@@ -532,6 +532,8 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
   u64 t0;
   dma_cookie_t cookie;
   int ret = 0;
+  unsigned long left;
+  bool do_abort = false;
 
   if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
     return -EFAULT;
@@ -592,7 +594,19 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
 
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     struct mydma_weight_channel *c = &md->weight_channels[i];
-    wait_for_completion_timeout(&c->done, XFER_TIMEOUT_MS);
+    left = wait_for_completion_timeout(&c->done, XFER_TIMEOUT_MS);
+
+    if (left <= 0) {
+      ret = left ? left : ETIMEDOUT;
+      do_abort = true;
+      goto unlock_lanes;
+    }
+
+    if (c->result != DMA_TRANS_NOERROR) {
+      ret = -EIO;
+      goto unlock_lanes;
+    }
+
     args.done_ns[i] = ktime_get_ns() - t0;
   }
 
@@ -601,6 +615,9 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
 unlock_lanes:
   while (--locked) {
     mutex_unlock(&md->weight_channels[locked].lock);
+    if (do_abort) {
+      dmaengine_terminate_sync(md->weight_channels[locked].channel);
+    }
   }
 
   if (copy_to_user((void __user *)arg, &args, sizeof(mydma_stream_args))) {
