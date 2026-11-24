@@ -111,8 +111,8 @@ struct mydma_weight_channel {
 
   /* Filled in by the completion callback, read by the waiting thread. */
   enum dmaengine_tx_result result;
+  u64 t_done;
   u32 residue; /* bytes NOT transferred (0 = all of them) */
-  u32 t_done;
 };
 
 /*
