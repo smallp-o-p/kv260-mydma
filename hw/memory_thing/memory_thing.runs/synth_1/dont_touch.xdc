@@ -109,6 +109,18 @@ set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_ax
 # IP: bd/memthing/ip/memthing_xbar_0/memthing_xbar_0.xci
 set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_xbar_0 || ORIG_REF_NAME==memthing_xbar_0} -quiet] -quiet
 
+# IP: bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0.xci
+set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_auto_ds_0 || ORIG_REF_NAME==memthing_auto_ds_0} -quiet] -quiet
+
+# IP: bd/memthing/ip/memthing_auto_pc_0/memthing_auto_pc_0.xci
+set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_auto_pc_0 || ORIG_REF_NAME==memthing_auto_pc_0} -quiet] -quiet
+
+# IP: bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1.xci
+set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_auto_ds_1 || ORIG_REF_NAME==memthing_auto_ds_1} -quiet] -quiet
+
+# IP: bd/memthing/ip/memthing_auto_pc_1/memthing_auto_pc_1.xci
+set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_auto_pc_1 || ORIG_REF_NAME==memthing_auto_pc_1} -quiet] -quiet
+
 # IP: bd/memthing/ip/memthing_ps8_0_axi_periph_0/memthing_ps8_0_axi_periph_0.xci
 set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_ps8_0_axi_periph_0 || ORIG_REF_NAME==memthing_ps8_0_axi_periph_0} -quiet] -quiet
 
@@ -526,18 +538,6 @@ set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_sm
 # IP: bd/memthing/ip/memthing_lane_checker_1_0/memthing_lane_checker_1_0.xci
 set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_lane_checker_1_0 || ORIG_REF_NAME==memthing_lane_checker_1_0} -quiet] -quiet
 
-# IP: bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0.xci
-set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_auto_ds_0 || ORIG_REF_NAME==memthing_auto_ds_0} -quiet] -quiet
-
-# IP: bd/memthing/ip/memthing_auto_pc_0/memthing_auto_pc_0.xci
-set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_auto_pc_0 || ORIG_REF_NAME==memthing_auto_pc_0} -quiet] -quiet
-
-# IP: bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1.xci
-set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_auto_ds_1 || ORIG_REF_NAME==memthing_auto_ds_1} -quiet] -quiet
-
-# IP: bd/memthing/ip/memthing_auto_pc_1/memthing_auto_pc_1.xci
-set_property KEEP_HIERARCHY SOFT [get_cells -hier -filter {REF_NAME==memthing_auto_pc_1 || ORIG_REF_NAME==memthing_auto_pc_1} -quiet] -quiet
-
 # XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_zynq_ultra_ps_e_0_0/memthing_zynq_ultra_ps_e_0_0_ooc.xdc
 
 # XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_zynq_ultra_ps_e_0_0/memthing_zynq_ultra_ps_e_0_0.xdc
@@ -602,6 +602,20 @@ set_property KEEP_HIERARCHY SOFT [get_cells [split [join [get_cells -hier -filte
 
 # XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_axi_dma_0_0/memthing_axi_dma_0_0_clocks.xdc
 #dup# set_property KEEP_HIERARCHY SOFT [get_cells [split [join [get_cells -hier -filter {REF_NAME==memthing_axi_dma_0_0 || ORIG_REF_NAME==memthing_axi_dma_0_0} -quiet] {/U0 } ]/U0 ] -quiet] -quiet
+
+# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_clocks.xdc
+set_property KEEP_HIERARCHY SOFT [get_cells [split [join [get_cells -hier -filter {REF_NAME==memthing_auto_ds_0 || ORIG_REF_NAME==memthing_auto_ds_0} -quiet] {/inst } ]/inst ] -quiet] -quiet
+
+# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_ooc.xdc
+
+# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_pc_0/memthing_auto_pc_0_ooc.xdc
+
+# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_clocks.xdc
+set_property KEEP_HIERARCHY SOFT [get_cells [split [join [get_cells -hier -filter {REF_NAME==memthing_auto_ds_1 || ORIG_REF_NAME==memthing_auto_ds_1} -quiet] {/inst } ]/inst ] -quiet] -quiet
+
+# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_ooc.xdc
+
+# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_pc_1/memthing_auto_pc_1_ooc.xdc
 
 # XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_axi_dma_0_4/memthing_axi_dma_0_4.xdc
 set_property KEEP_HIERARCHY SOFT [get_cells [split [join [get_cells -hier -filter {REF_NAME==memthing_axi_dma_0_4 || ORIG_REF_NAME==memthing_axi_dma_0_4} -quiet] {/U0 } ]/U0 ] -quiet] -quiet
@@ -826,19 +840,5 @@ set_property KEEP_HIERARCHY SOFT [get_cells [split [join [get_cells -hier -filte
 # XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_smartconnect_0_3/bd_0/ip/ip_34/bd_66d7_m00bn_0_ooc.xdc
 
 # XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_smartconnect_0_3/ooc.xdc
-
-# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_clocks.xdc
-set_property KEEP_HIERARCHY SOFT [get_cells [split [join [get_cells -hier -filter {REF_NAME==memthing_auto_ds_0 || ORIG_REF_NAME==memthing_auto_ds_0} -quiet] {/inst } ]/inst ] -quiet] -quiet
-
-# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_ooc.xdc
-
-# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_pc_0/memthing_auto_pc_0_ooc.xdc
-
-# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_clocks.xdc
-set_property KEEP_HIERARCHY SOFT [get_cells [split [join [get_cells -hier -filter {REF_NAME==memthing_auto_ds_1 || ORIG_REF_NAME==memthing_auto_ds_1} -quiet] {/inst } ]/inst ] -quiet] -quiet
-
-# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_ooc.xdc
-
-# XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_pc_1/memthing_auto_pc_1_ooc.xdc
 
 # XDC: c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/memthing_ooc.xdc

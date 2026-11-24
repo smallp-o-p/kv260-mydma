@@ -2572,7 +2572,7 @@
         "inst_hier_path": "axi_dma_3",
         "parameters": {
           "c_include_mm2s_dre": {
-            "value": "1"
+            "value": "0"
           },
           "c_include_s2mm": {
             "value": "0"
@@ -4122,19 +4122,53 @@
         "address_spaces": {
           "Data_SG": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HP1_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP3/HP1_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HP1_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP3/HP1_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP1_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP3/HP1_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP1_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP3/HP1_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           },
           "Data_MM2S": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HP1_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP3/HP1_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HP1_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP3/HP1_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP1_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP3/HP1_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP1_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP3/HP1_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           }
@@ -4144,19 +4178,53 @@
         "address_spaces": {
           "Data_SG": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HP2_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HP2_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP2_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP2_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           },
           "Data_MM2S": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HP2_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HP2_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP2_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP2_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           }
@@ -4166,19 +4234,53 @@
         "address_spaces": {
           "Data_SG": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HP3_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP5/HP3_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HP3_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP5/HP3_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP3_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP5/HP3_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP3_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP5/HP3_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           },
           "Data_MM2S": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HP3_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP5/HP3_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HP3_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP5/HP3_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP3_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP5/HP3_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HP3_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP5/HP3_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           }
@@ -4188,28 +4290,79 @@
         "address_spaces": {
           "Data_SG": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HPC0_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HPC0_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HPC0_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HPC0_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           },
           "Data_MM2S": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HPC0_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HPC0_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HPC0_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HPC0_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           },
           "Data_S2MM": {
             "segments": {
+              "SEG_zynq_ultra_ps_e_0_HPC0_DDR_HIGH": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_DDR_HIGH",
+                "offset": "0x00000000",
+                "range": "1",
+                "is_excluded": "TRUE"
+              },
               "SEG_zynq_ultra_ps_e_0_HPC0_DDR_LOW": {
                 "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
+              },
+              "SEG_zynq_ultra_ps_e_0_HPC0_LPS_OCM": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_LPS_OCM",
+                "offset": "0xFF000000",
+                "range": "16M",
+                "is_excluded": "TRUE"
+              },
+              "SEG_zynq_ultra_ps_e_0_HPC0_QSPI": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP0/HPC0_QSPI",
+                "offset": "0xC0000000",
+                "range": "512M"
               }
             }
           }
