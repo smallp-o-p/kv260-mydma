@@ -34,6 +34,9 @@ jobs:
       - name: Package Kria app
         run: bash hw/package.sh
 
+      - name: Check multi_hp overlay
+        run: dtc -@ -q -I dts -O dtb -o /dev/null hw/multi_hp.dts
+
       - name: Build user-space test
         run: make -C app
 
