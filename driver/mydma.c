@@ -95,7 +95,7 @@ module_param(wbuf_mb, uint, 0444);
 MODULE_PARM_DESC(wbuf_mb,
                  "Size of Weight Lane buffer in MiB (default = 16MiB)");
 
-#define MYDMA_WEIGHT_BUF (wbuf_mb << 20)
+#define MYDMA_WEIGHT_BUF_SIZE (wbuf_mb << 20)
 
 struct mydma_weight_channel {
   struct device *dev;
@@ -497,17 +497,35 @@ unlock_rx:
 
 static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
   struct mydma *md = container_of(fp->private_data, struct mydma, misc);
-  struct mydma_chan *p_channel;
+  struct mydma_chan *p_channel = NULL;
+  struct mydma_weight_channel *p_weight_channel = NULL;
 
-  if (vma->vm_pgoff == 0) {
+  int i = 0;
+  _Bool is_weight_channel_offset = false;
+
+  for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
+    if (vma->vm_pgoff == MYDMA_W_RX_OFFSET(i)) {
+      is_weight_channel_offset = true;
+      break;
+    }
+  }
+
+  if (is_weight_channel_offset) {
+    p_weight_channel = md->weight_channels + i;
+  } else if (vma->vm_pgoff == 0) {
     p_channel = &md->act_tx;
-  } else if (vma->vm_pgoff == (MYDMA_BUF_SIZE >> PAGE_SHIFT)) { // rx
+  } else if (vma->vm_pgoff == (MYDMA_BUF_SIZE >> PAGE_SHIFT)) {
     p_channel = &md->act_rx;
   } else {
     return -EINVAL;
   }
 
   vma->vm_pgoff = 0;
+
+  if (is_weight_channel_offset) {
+    return dma_mmap_pages(p_weight_channel->dev, vma, MYDMA_WEIGHT_BUF_SIZE,
+                          virt_to_page(p_weight_channel->dma_buffer));
+  }
 
   return dma_mmap_coherent(p_channel->dma_dev, vma, p_channel->buf,
                            p_channel->buf_dma, MYDMA_BUF_SIZE);
@@ -542,8 +560,9 @@ static int mydma_chan_init_weight(struct device *dev,
   }
 
   c->dma_device = c->channel->device->dev;
-  c->dma_buffer = dma_alloc_noncoherent(
-      c->dma_device, MYDMA_WEIGHT_BUF, &c->bus_addr, DMA_TO_DEVICE, GFP_KERNEL);
+  c->dma_buffer =
+      dma_alloc_noncoherent(c->dma_device, MYDMA_WEIGHT_BUF_SIZE, &c->bus_addr,
+                            DMA_TO_DEVICE, GFP_KERNEL);
 
   if (!c->dma_buffer) {
     dma_release_channel(c->channel);
@@ -612,7 +631,7 @@ static void mydma_weight_channel_free(struct mydma_weight_channel *c) {
     dmaengine_terminate_sync(c->channel);
     dma_release_channel(c->channel);
   }
-  dma_free_noncoherent(c->dma_device, MYDMA_WEIGHT_BUF, c->dma_buffer,
+  dma_free_noncoherent(c->dma_device, MYDMA_WEIGHT_BUF_SIZE, c->dma_buffer,
                        c->bus_addr, DMA_TO_DEVICE);
 }
 
@@ -625,6 +644,11 @@ static int mydma_probe(struct platform_device *pdev) {
   struct device *dev = &pdev->dev;
   struct mydma *md;
   int ret;
+  size_t i;
+  static const char *const weight_channel_names[] = {"w0", "w1", "w2", "w3"};
+
+  if (wbuf_mb == 0 || wbuf_mb > MYDMA_W_MAX_MB)
+    return -EINVAL;
 
   /*
    * devm_ = "device-managed": freed automatically when the device is
@@ -635,9 +659,6 @@ static int mydma_probe(struct platform_device *pdev) {
     return -ENOMEM;
   md->dev = dev;
 
-  static const char *const weight_channel_names[] = {"w0", "w1", "w2", "w3"};
-  size_t i;
-
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     ret = mydma_chan_init_weight(dev, md->weight_channels + i,
                                  weight_channel_names[i]);
@@ -647,7 +668,7 @@ static int mydma_probe(struct platform_device *pdev) {
 
   ret = mydma_chan_init(dev, &md->act_tx, "tx", &md->act_rx);
   if (ret)
-    return ret;
+    goto err_weights;
 
   ret = mydma_chan_init(dev, &md->act_rx, "rx", &md->act_tx);
   if (ret)

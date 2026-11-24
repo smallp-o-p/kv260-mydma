@@ -48,10 +48,6 @@ typedef struct {
 /*
  * ---- Weight engines (one MM2S-only AXI DMA per HP port) --------------------
  *
- * Present only when the device tree names them ("w0".."w3" in dma-names).
- * Each has its own buffer of wbuf_mb MiB (module parameter), mapped at
- * MYDMA_W_OFFSET(i):
- *
  *   w0 = mmap(NULL, info.w_buf_bytes[0], PROT_READ | PROT_WRITE, MAP_SHARED,
  *             fd, MYDMA_W_OFFSET(0));
  *
@@ -66,7 +62,7 @@ typedef struct {
 
 #define MYDMA_W_NUM_CHANNELS 4u
 #define MYDMA_W_MAX_MB 512u
-#define MYDMA_W_OFFSET(i) ((i + 1) << 30)
+#define MYDMA_W_OFFSET(i) (((__u64)(i) + 1) << 30)
 #define MYDMA_W_RX_OFFSET(i) (MYDMA_W_OFFSET(i) + ((__u64)MYDMA_W_MAX_MB << 20))
 
 /* Argument of MYDMA_INFO_CMD (out only). */
