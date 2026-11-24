@@ -430,18 +430,17 @@ static ssize_t mydma_read(struct file *f, char __user *ubuf, size_t count,
   return ret;
 }
 
-/*
-  typedef struct {
-    __u32 tx_bytes; // send to MM2S
-    __u32 rx_bytes; // receive from S2MM
-  } mydma_xfer_args;
-*/
-static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
+static long mydma_ioctl_xfer(struct mydma *md, unsigned int cmd,
+                             unsigned long arg) {
+  /*
+    typedef struct {
+      __u32 tx_bytes; // send to MM2S
+      __u32 rx_bytes; // receive from S2MM
+    } mydma_xfer_args;
+  */
   mydma_xfer_args args;
+  struct mydma_chan *rx, *tx;
   int ret;
-
-  if (cmd != MYDMA_XFER_CMD)
-    return -ENOTTY;
 
   if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
     return -EFAULT;
@@ -451,9 +450,8 @@ static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
       args.rx_bytes > max_xfer || args.tx_bytes > max_xfer)
     return -EINVAL;
 
-  struct mydma *md = container_of(fp->private_data, struct mydma, misc);
-  struct mydma_chan *rx = &md->act_rx;
-  struct mydma_chan *tx = &md->act_tx;
+  rx = &md->act_rx;
+  tx = &md->act_tx;
 
   if (mutex_lock_interruptible(&rx->lock))
     return -ERESTARTSYS;
@@ -493,6 +491,56 @@ unlock_rx:
     return -EFAULT;
 
   return ret;
+}
+
+static long mydma_ioctl_info(struct mydma *md, unsigned int cmd,
+                             unsigned long arg) {
+  /*
+   *  typedef struct {
+   *    __u32 w_mask;
+   *    __u32 w_buf_bytes[MYDMA_W_NUM_CHANNELS];
+   *  } mydma_info_args;
+   */
+
+  mydma_info_args args;
+  unsigned i;
+
+  if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
+    return -EFAULT;
+
+  args.w_mask = 0xF; // 0x1111
+
+  for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
+    args.w_buf_bytes[i] = MYDMA_WEIGHT_BUF_SIZE;
+  }
+
+  if (copy_to_user((void __user *)arg, &args, sizeof(args)))
+    return -EFAULT;
+
+  return 0;
+}
+
+static long mydma_ioctl_stream(struct file *fp, unsigned int cmd,
+                               unsigned long arg) {
+  mydma_stream_args stream_args;
+  return 0;
+}
+
+static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
+  struct mydma *md;
+  switch (cmd) {
+  case MYDMA_XFER_CMD:
+    md = container_of(fp->private_data, struct mydma, misc);
+    return mydma_ioctl_xfer(md, cmd, arg);
+  case MYDMA_INFO_CMD:
+    md = container_of(fp->private_data, struct mydma, misc);
+    return mydma_ioctl_info(md, cmd, arg);
+  case MYDMA_STREAM_CMD:
+    return mydma_ioctl_stream(fp, cmd, arg);
+  default:
+    break;
+  }
+  return -ENOTTY;
 }
 
 static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
