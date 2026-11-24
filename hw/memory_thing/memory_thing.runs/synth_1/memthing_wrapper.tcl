@@ -70,8 +70,6 @@ proc create_report { reportName command } {
   }
 }
 OPTRACE "synth_1" START { ROLLUP_AUTO }
-set_param chipscope.maxJobs 1
-set_msg_config -id {HDL-1065} -limit 10000
 OPTRACE "Creating in-memory project" START { }
 create_project -in_memory -part xck26-sfvc784-2LV-c
 
@@ -121,6 +119,14 @@ set_property used_in_implementation false [get_files -all c:/Users/wtran013/Docu
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_proc_sys_reset_0_0/memthing_proc_sys_reset_0_0.xdc]
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_axi_dma_0_0/memthing_axi_dma_0_0.xdc]
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_axi_dma_0_0/memthing_axi_dma_0_0_clocks.xdc]
+set_property used_in_synthesis false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_clocks.xdc]
+set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_clocks.xdc]
+set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_ooc.xdc]
+set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_pc_0/memthing_auto_pc_0_ooc.xdc]
+set_property used_in_synthesis false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_clocks.xdc]
+set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_clocks.xdc]
+set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_ooc.xdc]
+set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_pc_1/memthing_auto_pc_1_ooc.xdc]
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_axi_dma_0_4/memthing_axi_dma_0_4.xdc]
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_axi_dma_0_4/memthing_axi_dma_0_4_clocks.xdc]
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_axi_dma_1_0/memthing_axi_dma_1_0.xdc]
@@ -225,14 +231,6 @@ set_property used_in_implementation false [get_files -all c:/Users/wtran013/Docu
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_smartconnect_0_3/bd_0/ip/ip_33/bd_66d7_m00wn_0_ooc.xdc]
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_smartconnect_0_3/bd_0/ip/ip_34/bd_66d7_m00bn_0_ooc.xdc]
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_smartconnect_0_3/ooc.xdc]
-set_property used_in_synthesis false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_clocks.xdc]
-set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_clocks.xdc]
-set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_0/memthing_auto_ds_0_ooc.xdc]
-set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_pc_0/memthing_auto_pc_0_ooc.xdc]
-set_property used_in_synthesis false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_clocks.xdc]
-set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_clocks.xdc]
-set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_ds_1/memthing_auto_ds_1_ooc.xdc]
-set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/ip/memthing_auto_pc_1/memthing_auto_pc_1_ooc.xdc]
 set_property used_in_implementation false [get_files -all c:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.gen/sources_1/bd/memthing/memthing_ooc.xdc]
 
 OPTRACE "Adding files" END { }

@@ -23,3 +23,20 @@ modules.order
 # clangd
 compile_commands.json
 .cache/
+
+hw/memory_thing/*.cache/
+hw/memory_thing/*.gen/
+hw/memory_thing/*.hw/
+hw/memory_thing/*.ip_user_files/
+hw/memory_thing/*.runs/
+hw/memory_thing/*.sim/
+hw/memory_thing/*.Xil/
+hw/memory_thing/.Xil/
+hw/memory_thing/NA/
+*.jou
+*.log
+*.str
+vivado_pid*.zip
+*.backup.jou
+*.backup.log
+webtalk*
