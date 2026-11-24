@@ -90,6 +90,24 @@ module_param(max_xfer, uint, 0444);
 MODULE_PARM_DESC(max_xfer,
                  "Max bytes per read()/write() (default 16383, max 1 MiB)");
 
+struct mydma_weight_channel {
+  struct device *dev;
+  const char *name;
+
+  struct dma_chan *channel;
+  struct device *dma_device;
+  atomic_t irq_lost;
+
+  void *dma_buffer;
+  dma_addr_t bus_addr;
+  struct completion done;
+  struct mutex lock;
+
+  /* Filled in by the completion callback, read by the waiting thread. */
+  enum dmaengine_tx_result result;
+  u32 residue; /* bytes NOT transferred (0 = all of them) */
+};
+
 /*
  * Everything we keep per direction. There are two of these: tx (MM2S,
  * memory -> stream) and rx (S2MM, stream -> memory).
@@ -163,8 +181,9 @@ struct mydma_chan {
 /* The whole device: both directions plus the /dev node. */
 struct mydma {
   struct device *dev;
-  struct mydma_chan tx;
-  struct mydma_chan rx;
+  struct mydma_weight_channel weight_channels[MYDMA_W_NUM_CHANNELS];
+  struct mydma_chan act_tx;
+  struct mydma_chan act_rx;
   struct miscdevice misc; /* embedded, so container_of() can find us */
 };
 
@@ -341,7 +360,7 @@ static ssize_t mydma_write(struct file *f, const char __user *ubuf,
    * container_of() steps back from the member to the whole struct.
    */
   struct mydma *md = container_of(f->private_data, struct mydma, misc);
-  struct mydma_chan *c = &md->tx;
+  struct mydma_chan *c = &md->act_tx;
   ssize_t ret;
 
   count = mydma_clamp(count);
@@ -372,7 +391,7 @@ out:
 static ssize_t mydma_read(struct file *f, char __user *ubuf, size_t count,
                           loff_t *ppos) {
   struct mydma *md = container_of(f->private_data, struct mydma, misc);
-  struct mydma_chan *c = &md->rx;
+  struct mydma_chan *c = &md->act_rx;
   ssize_t ret;
 
   count = mydma_clamp(count);
@@ -426,8 +445,8 @@ static long mydma_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
     return -EINVAL;
 
   struct mydma *md = container_of(fp->private_data, struct mydma, misc);
-  struct mydma_chan *rx = &md->rx;
-  struct mydma_chan *tx = &md->tx;
+  struct mydma_chan *rx = &md->act_rx;
+  struct mydma_chan *tx = &md->act_tx;
 
   if (mutex_lock_interruptible(&rx->lock))
     return -ERESTARTSYS;
@@ -474,9 +493,9 @@ static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
   struct mydma_chan *p_channel;
 
   if (vma->vm_pgoff == 0) {
-    p_channel = &md->tx;
+    p_channel = &md->act_tx;
   } else if (vma->vm_pgoff == (MYDMA_BUF_SIZE >> PAGE_SHIFT)) { // rx
-    p_channel = &md->rx;
+    p_channel = &md->act_rx;
   } else {
     return -EINVAL;
   }
@@ -492,10 +511,6 @@ static int mydma_mmap(struct file *fp, struct vm_area_struct *vma) {
  * Anything not listed gets a default: e.g. no .mmap means mmap() fails with
  * ENODEV, no .unlocked_ioctl means ioctl() fails with ENOTTY.
  *
- * >>> YOUR WORK: .mmap and .unlocked_ioctl are the two entries you'll add.
- * >>> An ioctl command number is built with the _IOWR() macro from a
- * >>> "magic" letter, a number and the argument struct's type; user space
- * >>> and the driver must share that definition (usually a small header).
  */
 static const struct file_operations mydma_fops = {
     .owner = THIS_MODULE, /* keeps the module loaded while the file is open */
@@ -505,6 +520,34 @@ static const struct file_operations mydma_fops = {
         noop_llseek, /* lseek() succeeds but does nothing: no file position */
     .unlocked_ioctl = mydma_ioctl,
     .mmap = mydma_mmap};
+
+static int mydma_chan_init_weight(struct device *dev,
+                                  struct mydma_weight_channel *c,
+                                  const char *name) {
+  c->dev = dev;
+  c->name = name;
+  atomic_set(&c->irq_lost, 0);
+
+  c->channel = dma_request_chan(dev, name);
+  if (IS_ERR(c->channel)) {
+    return dev_err_probe(dev, PTR_ERR(c->channel),
+                         "Failed to get '%s' DMA channel", name);
+  }
+
+  c->dma_device = c->channel->device->dev;
+  c->dma_buffer = dma_alloc_noncoherent(
+      c->dma_device, MYDMA_W_BUF_SIZE, &c->bus_addr, DMA_TO_DEVICE, GFP_KERNEL);
+
+  if (c->dma_buffer) {
+    dma_release_channel(c->channel);
+    return -ENOMEM;
+  }
+
+  init_completion(&c->done);
+  mutex_init(&c->lock);
+
+  return 0;
+}
 
 /*
  * Set up one direction at probe time: get the DMA channel, then allocate
@@ -557,6 +600,15 @@ static void mydma_chan_free(struct mydma_chan *c) {
   dma_free_coherent(c->dma_dev, MYDMA_BUF_SIZE, c->buf, c->buf_dma);
 }
 
+static void mydma_weight_channel_free(struct mydma_weight_channel *c) {
+  if (c->channel) {
+    dmaengine_terminate_sync(c->channel);
+    dma_release_channel(c->channel);
+  }
+  dma_free_noncoherent(c->dma_device, MYDMA_W_BUF_SIZE, c->dma_buffer,
+                       c->bus_addr, DMA_TO_DEVICE);
+}
+
 /*
  * probe: called when the kernel matches our driver to the device tree node.
  * Everything the device needs is set up here; returning an error leaves the
@@ -576,11 +628,29 @@ static int mydma_probe(struct platform_device *pdev) {
     return -ENOMEM;
   md->dev = dev;
 
-  ret = mydma_chan_init(dev, &md->tx, "tx", &md->rx);
+  static const char *const weight_channel_names[] = {"w0", "w1", "w2", "w3"};
+  static const size_t expected_channels =
+      sizeof(weight_channel_names) / sizeof(const char *);
+  size_t i;
+
+  for (i = 0; i < expected_channels; i++) {
+    ret = mydma_chan_init_weight(dev, md->weight_channels + i,
+                                 weight_channel_names[i]);
+    if (ret)
+      break;
+  }
+
+  if (i < expected_channels) {
+    for (size_t to_free = 0; to_free < expected_channels; to_free++)
+      mydma_weight_channel_free(md->weight_channels + i);
+    return ret;
+  }
+
+  ret = mydma_chan_init(dev, &md->act_tx, "tx", &md->act_rx);
   if (ret)
     return ret;
 
-  ret = mydma_chan_init(dev, &md->rx, "rx", &md->tx);
+  ret = mydma_chan_init(dev, &md->act_rx, "rx", &md->act_tx);
   if (ret)
     goto err_tx;
 
@@ -603,15 +673,15 @@ static int mydma_probe(struct platform_device *pdev) {
   /* Stash our struct so remove() can find it from the platform device. */
   platform_set_drvdata(pdev, md);
   dev_info(dev, "ready: tx=%s rx=%s, max_xfer=%u, /dev/%s\n",
-           dma_chan_name(md->tx.chan), dma_chan_name(md->rx.chan), max_xfer,
-           DRV_NAME);
+           dma_chan_name(md->act_tx.chan), dma_chan_name(md->act_rx.chan),
+           max_xfer, DRV_NAME);
   return 0;
 
   /* Error unwinding: each label undoes the steps that succeeded before it. */
 err_rx:
-  mydma_chan_free(&md->rx);
+  mydma_chan_free(&md->act_rx);
 err_tx:
-  mydma_chan_free(&md->tx);
+  mydma_chan_free(&md->act_tx);
   return ret;
 }
 
@@ -624,8 +694,8 @@ static void mydma_teardown(struct platform_device *pdev) {
   struct mydma *md = platform_get_drvdata(pdev);
 
   misc_deregister(&md->misc);
-  mydma_chan_free(&md->rx);
-  mydma_chan_free(&md->tx);
+  mydma_chan_free(&md->act_rx);
+  mydma_chan_free(&md->act_tx);
 }
 
 /*
@@ -650,7 +720,7 @@ static int mydma_remove(struct platform_device *pdev) {
  */
 static const struct of_device_id mydma_of_match[] = {
     {.compatible = "acme,mydma"},
-    {/* sentinel: an empty entry marks the end of the table */}};
+    {}};
 MODULE_DEVICE_TABLE(of, mydma_of_match);
 
 static struct platform_driver mydma_driver = {
@@ -663,13 +733,8 @@ static struct platform_driver mydma_driver = {
         },
 };
 
-/*
- * Expands to the module's init and exit functions: register the platform
- * driver on insmod, unregister it on rmmod.
- */
 module_platform_driver(mydma_driver);
 
-MODULE_AUTHOR("Your Name");
+MODULE_AUTHOR("William Tran-Viet wtran013@uottawa.ca");
 MODULE_DESCRIPTION("dmaengine client for a PL AXI DMA on Kria KV260");
-/* GPL is required to use GPL-only kernel symbols, which dmaengine is. */
 MODULE_LICENSE("GPL");
