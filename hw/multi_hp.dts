@@ -122,7 +122,7 @@
 				dma-channel@a0110000 {
 					compatible = "xlnx,axi-dma-mm2s-channel";
 					dma-channels = <0x1>;
-					interrupts = <0 91 4>;
+					interrupts = <0 92 4>;
 					xlnx,datawidth = <0x80>;
 					xlnx,device-id = <0x2>;
 				};
@@ -158,7 +158,7 @@
 				clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>, <&zynqmp_clk 71>;
 				interrupt-names = "mm2s_introut";
 				interrupt-parent = <&gic>;
-				interrupts = <0 91 4>;	/* pl_ps_irq0[2]*/
+				interrupts = <0 94 4>;	/* pl_ps_irq0[2]*/
 				xlnx,addrwidth = <0x20>;
 				xlnx,include-sg;
 				xlnx,sg-length-width = <0x1a>;	/* 26 bits: max 64 MiB - 1 per transfer */
