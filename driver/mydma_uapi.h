@@ -86,7 +86,7 @@ typedef struct {
                                           completion */
 } mydma_stream_args;
 
-#define MYDMA_W_MASK 0b1111
+#define MYDMA_W_MASK 0xFu
 #define MYDMA_STREAM_RESULTS 0x1u
 #define MYDMA_RESULT_BYTES 16
 
