@@ -8,8 +8,7 @@
       "pfm_name": "xilinx:kv260_som:memory_thing:0.0",
       "rev_ctrl_bd_flag": "RevCtrlBdOff",
       "synth_flow_mode": "None",
-      "tool_version": "2022.1",
-      "validated": "true"
+      "tool_version": "2022.1"
     },
     "design_tree": {
       "xlconstant_0": "",
@@ -42,7 +41,11 @@
         "m02_couplers": {},
         "m03_couplers": {},
         "m04_couplers": {}
-      }
+      },
+      "axis_data_fifo_0": "",
+      "axis_data_fifo_1": "",
+      "axis_data_fifo_2": "",
+      "axis_data_fifo_3": ""
     },
     "components": {
       "xlconstant_0": {
@@ -5441,13 +5444,69 @@
             ]
           }
         }
+      },
+      "axis_data_fifo_0": {
+        "vlnv": "xilinx.com:ip:axis_data_fifo:2.0",
+        "xci_name": "memthing_axis_data_fifo_0_0",
+        "xci_path": "ip\\memthing_axis_data_fifo_0_0\\memthing_axis_data_fifo_0_0.xci",
+        "inst_hier_path": "axis_data_fifo_0",
+        "parameters": {
+          "FIFO_DEPTH": {
+            "value": "256"
+          },
+          "FIFO_MEMORY_TYPE": {
+            "value": "block"
+          }
+        }
+      },
+      "axis_data_fifo_1": {
+        "vlnv": "xilinx.com:ip:axis_data_fifo:2.0",
+        "xci_name": "memthing_axis_data_fifo_0_1",
+        "xci_path": "ip\\memthing_axis_data_fifo_0_1\\memthing_axis_data_fifo_0_1.xci",
+        "inst_hier_path": "axis_data_fifo_1",
+        "parameters": {
+          "FIFO_DEPTH": {
+            "value": "256"
+          },
+          "FIFO_MEMORY_TYPE": {
+            "value": "block"
+          }
+        }
+      },
+      "axis_data_fifo_2": {
+        "vlnv": "xilinx.com:ip:axis_data_fifo:2.0",
+        "xci_name": "memthing_axis_data_fifo_0_2",
+        "xci_path": "ip\\memthing_axis_data_fifo_0_2\\memthing_axis_data_fifo_0_2.xci",
+        "inst_hier_path": "axis_data_fifo_2",
+        "parameters": {
+          "FIFO_DEPTH": {
+            "value": "256"
+          },
+          "FIFO_MEMORY_TYPE": {
+            "value": "block"
+          }
+        }
+      },
+      "axis_data_fifo_3": {
+        "vlnv": "xilinx.com:ip:axis_data_fifo:2.0",
+        "xci_name": "memthing_axis_data_fifo_0_3",
+        "xci_path": "ip\\memthing_axis_data_fifo_0_3\\memthing_axis_data_fifo_0_3.xci",
+        "inst_hier_path": "axis_data_fifo_3",
+        "parameters": {
+          "FIFO_DEPTH": {
+            "value": "256"
+          },
+          "FIFO_MEMORY_TYPE": {
+            "value": "block"
+          }
+        }
       }
     },
     "interface_nets": {
       "axi_dma_0_M_AXIS_MM2S": {
         "interface_ports": [
           "axi_dma_0/M_AXIS_MM2S",
-          "lane_checker_1/s_w0"
+          "axis_data_fifo_0/S_AXIS"
         ]
       },
       "axi_dma_0_M_AXI_MM2S": {
@@ -5464,8 +5523,8 @@
       },
       "axi_dma_1_M_AXIS_MM2S": {
         "interface_ports": [
-          "axi_dma_1/M_AXIS_MM2S",
-          "lane_checker_1/s_w1"
+          "axis_data_fifo_1/S_AXIS",
+          "axi_dma_1/M_AXIS_MM2S"
         ]
       },
       "axi_dma_1_M_AXI_MM2S": {
@@ -5482,8 +5541,8 @@
       },
       "axi_dma_2_M_AXIS_MM2S": {
         "interface_ports": [
-          "axi_dma_2/M_AXIS_MM2S",
-          "lane_checker_1/s_w2"
+          "axis_data_fifo_2/S_AXIS",
+          "axi_dma_2/M_AXIS_MM2S"
         ]
       },
       "axi_dma_2_M_AXI_MM2S": {
@@ -5500,8 +5559,8 @@
       },
       "axi_dma_3_M_AXIS_MM2S": {
         "interface_ports": [
-          "axi_dma_3/M_AXIS_MM2S",
-          "lane_checker_1/s_w3"
+          "axis_data_fifo_3/S_AXIS",
+          "axi_dma_3/M_AXIS_MM2S"
         ]
       },
       "axi_dma_3_M_AXI_MM2S": {
@@ -5568,6 +5627,30 @@
         "interface_ports": [
           "axi_interconnect_0/M04_AXI",
           "axi_dma_4/S_AXI_LITE"
+        ]
+      },
+      "axis_data_fifo_0_M_AXIS": {
+        "interface_ports": [
+          "axis_data_fifo_0/M_AXIS",
+          "lane_checker_1/s_w0"
+        ]
+      },
+      "axis_data_fifo_1_M_AXIS": {
+        "interface_ports": [
+          "axis_data_fifo_1/M_AXIS",
+          "lane_checker_1/s_w1"
+        ]
+      },
+      "axis_data_fifo_2_M_AXIS": {
+        "interface_ports": [
+          "axis_data_fifo_2/M_AXIS",
+          "lane_checker_1/s_w2"
+        ]
+      },
+      "axis_data_fifo_3_M_AXIS": {
+        "interface_ports": [
+          "axis_data_fifo_3/M_AXIS",
+          "lane_checker_1/s_w3"
         ]
       },
       "lane_checker_1_m_res": {
@@ -5677,7 +5760,11 @@
           "axi_interconnect_0/M02_ARESETN",
           "axi_interconnect_0/M03_ARESETN",
           "axi_interconnect_0/M04_ARESETN",
-          "axi_interconnect_0/S01_ARESETN"
+          "axi_interconnect_0/S01_ARESETN",
+          "axis_data_fifo_0/s_axis_aresetn",
+          "axis_data_fifo_1/s_axis_aresetn",
+          "axis_data_fifo_2/s_axis_aresetn",
+          "axis_data_fifo_3/s_axis_aresetn"
         ]
       },
       "xlconcat_0_dout": {
@@ -5732,7 +5819,11 @@
           "axi_interconnect_0/M02_ACLK",
           "axi_interconnect_0/M03_ACLK",
           "axi_interconnect_0/M04_ACLK",
-          "axi_interconnect_0/S01_ACLK"
+          "axi_interconnect_0/S01_ACLK",
+          "axis_data_fifo_0/s_axis_aclk",
+          "axis_data_fifo_1/s_axis_aclk",
+          "axis_data_fifo_2/s_axis_aclk",
+          "axis_data_fifo_3/s_axis_aclk"
         ]
       },
       "zynq_ultra_ps_e_0_pl_resetn0": {

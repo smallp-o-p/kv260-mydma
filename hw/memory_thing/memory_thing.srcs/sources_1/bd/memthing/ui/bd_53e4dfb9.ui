@@ -1,73 +1,81 @@
 {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"0.566494",
-   "Default View_TopLeft":"925,56",
+   "Default View_ScaleFactor":"0.920272",
+   "Default View_TopLeft":"2767,133",
    "ExpandedHierarchyInLayout":"",
    "guistr":"# # String gsaved with Nlview 7.0r6  2020-01-29 bk=1.5227 VDI=41 GEI=36 GUI=JA:10.0 non-TLS
 #  -string -flagsOSRD
 preplace inst xlconstant_0 -pg 1 -lvl 1 -x 90 -y 790 -defaultsOSRD
-preplace inst xlconcat_0 -pg 1 -lvl 6 -x 1860 -y 820 -defaultsOSRD
-preplace inst lane_checker_1 -pg 1 -lvl 4 -x 1120 -y 780 -defaultsOSRD
-preplace inst axi_dma_0 -pg 1 -lvl 9 -x 3180 -y 680 -defaultsOSRD
-preplace inst axi_dma_1 -pg 1 -lvl 3 -x 720 -y 550 -defaultsOSRD
-preplace inst axi_dma_2 -pg 1 -lvl 3 -x 720 -y 750 -defaultsOSRD
-preplace inst axi_dma_3 -pg 1 -lvl 3 -x 720 -y 1030 -defaultsOSRD
-preplace inst axi_dma_4 -pg 1 -lvl 5 -x 1440 -y 470 -defaultsOSRD
-preplace inst proc_sys_reset_0 -pg 1 -lvl 2 -x 350 -y 750 -defaultsOSRD
-preplace inst smartconnect_0 -pg 1 -lvl 6 -x 1860 -y 110 -defaultsOSRD
-preplace inst smartconnect_1 -pg 1 -lvl 6 -x 1860 -y 270 -defaultsOSRD
-preplace inst smartconnect_2 -pg 1 -lvl 6 -x 1860 -y 610 -defaultsOSRD
-preplace inst smartconnect_4 -pg 1 -lvl 6 -x 1860 -y 440 -defaultsOSRD
-preplace inst smartconnect_3 -pg 1 -lvl 6 -x 1860 -y 1030 -defaultsOSRD
-preplace inst zynq_ultra_ps_e_0 -pg 1 -lvl 7 -x 2350 -y 540 -defaultsOSRD
-preplace inst axi_interconnect_0 -pg 1 -lvl 8 -x 2830 -y 680 -defaultsOSRD
-preplace netloc axi_dma_0_mm2s_introut 1 5 5 1710 1150 NJ 1150 NJ 1150 NJ 1150 3350
-preplace netloc axi_dma_1_mm2s_introut 1 3 3 N 590 1230J 610 1650J
-preplace netloc axi_dma_2_mm2s_introut 1 3 3 960J 640 NJ 640 1620
-preplace netloc axi_dma_3_mm2s_introut 1 3 3 970J 660 NJ 660 1610
-preplace netloc axi_dma_4_mm2s_introut 1 5 1 1680 520n
-preplace netloc axi_dma_4_s2mm_introut 1 5 1 1670 540n
-preplace netloc proc_sys_reset_0_peripheral_aresetn 1 2 7 530 850 950 530 1230 320 1640 1140 2020J 1110 2680 950 3010
-preplace netloc xlconcat_0_dout 1 6 1 2040 660n
+preplace inst xlconcat_0 -pg 1 -lvl 6 -x 2220 -y 820 -defaultsOSRD
+preplace inst lane_checker_1 -pg 1 -lvl 5 -x 1790 -y 750 -defaultsOSRD
+preplace inst axi_dma_0 -pg 1 -lvl 9 -x 3560 -y 680 -defaultsOSRD
+preplace inst axi_dma_1 -pg 1 -lvl 3 -x 770 -y 550 -defaultsOSRD
+preplace inst axi_dma_2 -pg 1 -lvl 3 -x 770 -y 750 -defaultsOSRD
+preplace inst axi_dma_3 -pg 1 -lvl 3 -x 770 -y 1010 -defaultsOSRD
+preplace inst axi_dma_4 -pg 1 -lvl 5 -x 1790 -y 470 -defaultsOSRD
+preplace inst proc_sys_reset_0 -pg 1 -lvl 2 -x 390 -y 750 -defaultsOSRD
+preplace inst smartconnect_0 -pg 1 -lvl 6 -x 2220 -y 110 -defaultsOSRD
+preplace inst smartconnect_1 -pg 1 -lvl 6 -x 2220 -y 270 -defaultsOSRD
+preplace inst smartconnect_2 -pg 1 -lvl 6 -x 2220 -y 610 -defaultsOSRD
+preplace inst smartconnect_4 -pg 1 -lvl 6 -x 2220 -y 440 -defaultsOSRD
+preplace inst smartconnect_3 -pg 1 -lvl 6 -x 2220 -y 1030 -defaultsOSRD
+preplace inst zynq_ultra_ps_e_0 -pg 1 -lvl 7 -x 2710 -y 540 -defaultsOSRD
+preplace inst axi_interconnect_0 -pg 1 -lvl 8 -x 3190 -y 680 -defaultsOSRD
+preplace inst axis_data_fifo_0 -pg 1 -lvl 10 -x 3900 -y 650 -defaultsOSRD
+preplace inst axis_data_fifo_1 -pg 1 -lvl 4 -x 1400 -y 700 -defaultsOSRD
+preplace inst axis_data_fifo_2 -pg 1 -lvl 4 -x 1400 -y 900 -defaultsOSRD
+preplace inst axis_data_fifo_3 -pg 1 -lvl 4 -x 1400 -y 1050 -defaultsOSRD
+preplace netloc axi_dma_0_mm2s_introut 1 5 5 2060 1120 NJ 1120 NJ 1120 NJ 1120 3740
+preplace netloc axi_dma_1_mm2s_introut 1 3 3 960 290 N 290 2010J
+preplace netloc axi_dma_2_mm2s_introut 1 3 3 NJ 790 1540 870 1970
+preplace netloc axi_dma_3_mm2s_introut 1 3 3 990J 820 1520 880 2050
+preplace netloc axi_dma_4_mm2s_introut 1 5 1 2000 520n
+preplace netloc axi_dma_4_s2mm_introut 1 5 1 1990 540n
+preplace netloc proc_sys_reset_0_peripheral_aresetn 1 2 8 570 850 1000 610 1570 330 2030 940 NJ 940 3040 940 3390 780 3770
+preplace netloc xlconcat_0_dout 1 6 1 2390 660n
 preplace netloc xlconstant_0_dout 1 1 1 N 790
-preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 1 8 170 650 520 450 920 450 1250 330 1630 700 2010 360 2670 920 3000
-preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 1 7 170 1160 NJ 1160 NJ 1160 NJ 1160 NJ 1160 NJ 1160 2660
-preplace netloc axi_dma_0_M_AXIS_MM2S 1 3 7 1000 1130 NJ 1130 NJ 1130 NJ 1130 NJ 1130 NJ 1130 3360
-preplace netloc axi_dma_0_M_AXI_MM2S 1 5 5 1700 1120 NJ 1120 NJ 1120 NJ 1120 3370
-preplace netloc axi_dma_0_M_AXI_SG 1 5 5 1720 930 NJ 930 NJ 930 NJ 930 3380
-preplace netloc axi_dma_1_M_AXIS_MM2S 1 3 1 940 550n
-preplace netloc axi_dma_1_M_AXI_MM2S 1 3 3 890 240 NJ 240 NJ
-preplace netloc axi_dma_1_M_AXI_SG 1 3 3 900 260 NJ 260 NJ
-preplace netloc axi_dma_2_M_AXIS_MM2S 1 3 1 890 750n
-preplace netloc axi_dma_2_M_AXI_MM2S 1 3 3 930 600 NJ 600 NJ
-preplace netloc axi_dma_2_M_AXI_SG 1 3 3 910 340 NJ 340 1690J
-preplace netloc axi_dma_3_M_AXIS_MM2S 1 3 1 980 780n
-preplace netloc axi_dma_3_M_AXI_MM2S 1 3 3 NJ 1010 NJ 1010 1610
-preplace netloc axi_dma_3_M_AXI_SG 1 3 3 NJ 990 NJ 990 1610
-preplace netloc axi_dma_4_M_AXIS_MM2S 1 3 3 990 310 NJ 310 1610
+preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 1 9 170 650 560 650 1010 620 1560 310 2020 930 2380 360 3030 930 3380 790 3780
+preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 1 7 170 1150 NJ 1150 NJ 1150 N 1150 NJ 1150 NJ 1150 3020
+preplace netloc axi_dma_0_M_AXI_MM2S 1 5 5 2050 710 2360J 910 NJ 910 NJ 910 3730
+preplace netloc axi_dma_0_M_AXI_SG 1 5 5 2060 700 2370J 920 NJ 920 NJ 920 3750
+preplace netloc axi_dma_1_M_AXI_MM2S 1 3 3 940 240 N 240 NJ
+preplace netloc axi_dma_1_M_AXI_SG 1 3 3 950 260 N 260 NJ
+preplace netloc axi_dma_2_M_AXI_MM2S 1 3 3 970 300 N 300 1980J
+preplace netloc axi_dma_2_M_AXI_SG 1 3 3 980 320 N 320 2040J
+preplace netloc axi_dma_3_M_AXI_MM2S 1 3 3 950J 1130 1590 1020 N
+preplace netloc axi_dma_3_M_AXI_SG 1 3 3 970J 1140 1570 1000 N
+preplace netloc axi_dma_4_M_AXIS_MM2S 1 4 2 1600 600 1960
 preplace netloc axi_dma_4_M_AXI_MM2S 1 5 1 N 420
 preplace netloc axi_dma_4_M_AXI_S2MM 1 5 1 N 440
 preplace netloc axi_dma_4_M_AXI_SG 1 5 1 N 400
-preplace netloc lane_checker_1_m_res 1 4 1 1240 430n
-preplace netloc smartconnect_0_M00_AXI 1 6 1 2040 110n
-preplace netloc smartconnect_1_M00_AXI 1 6 1 2030 270n
-preplace netloc smartconnect_2_M00_AXI 1 6 1 2020 480n
-preplace netloc smartconnect_3_M00_AXI 1 6 1 2030 500n
-preplace netloc smartconnect_4_M00_AXI 1 6 1 2000 420n
-preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 7 1 N 510
 preplace netloc axi_interconnect_0_M00_AXI 1 8 1 N 640
-preplace netloc axi_interconnect_0_M01_AXI 1 2 7 530 10 NJ 10 NJ 10 NJ 10 NJ 10 NJ 10 2990
-preplace netloc axi_interconnect_0_M02_AXI 1 2 7 540 20 NJ 20 NJ 20 NJ 20 NJ 20 NJ 20 2980
-preplace netloc axi_interconnect_0_M03_AXI 1 2 7 550 650 NJ 650 NJ 650 1660J 710 2010J 910 NJ 910 2990
-preplace netloc axi_interconnect_0_M04_AXI 1 4 5 1260 940 NJ 940 NJ 940 NJ 940 2980
+preplace netloc axi_interconnect_0_M01_AXI 1 2 7 560 -20 NJ -20 N -20 NJ -20 NJ -20 NJ -20 3370
+preplace netloc axi_interconnect_0_M02_AXI 1 2 7 580 -10 NJ -10 N -10 NJ -10 NJ -10 NJ -10 3360
+preplace netloc axi_interconnect_0_M03_AXI 1 2 7 590 0 NJ 0 N 0 NJ 0 NJ 0 NJ 0 3350
+preplace netloc axi_interconnect_0_M04_AXI 1 4 5 1590 10 NJ 10 NJ 10 NJ 10 3340
+preplace netloc lane_checker_1_m_res 1 4 2 1600 340 1970
+preplace netloc smartconnect_0_M00_AXI 1 6 1 2400 110n
+preplace netloc smartconnect_1_M00_AXI 1 6 1 2390 270n
+preplace netloc smartconnect_2_M00_AXI 1 6 1 2390 480n
+preplace netloc smartconnect_3_M00_AXI 1 6 1 2400 500n
+preplace netloc smartconnect_4_M00_AXI 1 6 1 2360 420n
+preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 7 1 N 510
 preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM1_FPD 1 7 1 N 530
-levelinfo -pg 1 0 90 350 720 1120 1440 1860 2350 2830 3180 3400
-pagesize -pg 1 -db -bbox -sgen 0 0 3400 1170
+preplace netloc axi_dma_0_M_AXIS_MM2S 1 9 1 3760 630n
+preplace netloc axis_data_fifo_0_M_AXIS 1 4 7 1580 20 N 20 N 20 N 20 N 20 N 20 4020
+preplace netloc axis_data_fifo_1_M_AXIS 1 4 1 1530 700n
+preplace netloc axi_dma_1_M_AXIS_MM2S 1 3 1 990 550n
+preplace netloc axis_data_fifo_2_M_AXIS 1 4 1 1530 730n
+preplace netloc axi_dma_2_M_AXIS_MM2S 1 3 1 960 750n
+preplace netloc axis_data_fifo_3_M_AXIS 1 4 1 1550 750n
+preplace netloc axi_dma_3_M_AXIS_MM2S 1 3 1 980 1010n
+levelinfo -pg 1 -40 90 390 770 1400 1790 2220 2710 3190 3560 3900 4040
+pagesize -pg 1 -db -bbox -sgen -40 -30 4040 1250
 "
 }
 {
    "da_axi4_cnt":"26",
    "da_board_cnt":"1",
-   "da_clkrst_cnt":"4",
+   "da_clkrst_cnt":"7",
    "da_zynq_ultra_ps_e_cnt":"1"
 }
