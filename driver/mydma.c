@@ -526,6 +526,46 @@ static long mydma_ioctl_info(struct mydma *md, unsigned int cmd,
   return 0;
 }
 
+static long mydma_arm_results(struct mydma_chan *rx, unsigned int n_lanes) {
+  unsigned int i;
+  dma_cookie_t cookie;
+  struct dma_async_tx_descriptor *desc = NULL;
+  int ret = 0;
+
+  ret = mydma_rearm(rx);
+  if (ret)
+    return ret;
+
+  reinit_completion(&rx->done);
+
+  for (i = 0; i < n_lanes; i++) {
+    desc = dmaengine_prep_slave_single(
+        rx->chan, rx->buf_dma + (i * MYDMA_RESULT_BYTES), MYDMA_RESULT_BYTES,
+        DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+
+    if (!desc) {
+      ret = -EIO;
+      goto done;
+    }
+
+    if (i == n_lanes - 1) {
+      desc->callback_result = mydma_done;
+      desc->callback_param = rx;
+    }
+
+    cookie = dmaengine_submit(desc);
+    if (dma_submit_error(cookie)) {
+      ret = -EIO;
+      goto done;
+    }
+  }
+
+  dma_async_issue_pending(rx->chan);
+
+done:
+  return ret;
+}
+
 static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
                                unsigned long arg) {
   mydma_stream_args args;
@@ -536,6 +576,9 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
   int ret = 0, j;
   unsigned long left;
   u32 locked_mask = 0;
+  bool results = false;
+  unsigned int n_lanes;
+  struct mydma_chan *rx;
 
   if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
     return -EFAULT;
@@ -546,9 +589,9 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
     return -EINVAL;
   }
 
-  if (args.flags == MYDMA_STREAM_RESULTS) {
-    return -EOPNOTSUPP;
-  }
+  n_lanes = hweight32(args.mask);
+  results = args.flags & MYDMA_STREAM_RESULTS;
+  rx = &md->act_rx;
 
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     if (!(args.mask & (1u << i)))
@@ -557,6 +600,10 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
         args.bytes[i] > MYDMA_WEIGHT_BUF_SIZE) {
       return -EINVAL;
     }
+  }
+
+  if (results && mutex_lock_interruptible(&rx->lock)) {
+    return -ERESTARTSYS;
   }
 
   // prep each lane
@@ -595,6 +642,12 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
     }
   }
 
+  if (results) {
+    ret = mydma_arm_results(rx, n_lanes);
+    if (ret)
+      goto unlock_lanes;
+  }
+
   t0 = ktime_get_ns();
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     if (!(args.mask & (1u << i)))
@@ -624,6 +677,17 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
 
   args.elapsed_ns = ktime_get_ns() - t0;
 
+  if (results) {
+    left = wait_for_completion_timeout(&rx->done,
+                                       msecs_to_jiffies(XFER_TIMEOUT_MS));
+
+    if (!left) {
+      ret = -ETIMEDOUT;
+    } else if (rx->result != DMA_TRANS_NOERROR || rx->residue > 0) {
+      ret = -EIO;
+    }
+  }
+
 unlock_lanes:
   for (j = MYDMA_W_NUM_CHANNELS - 1; j >= 0; j--) {
     if (!(locked_mask & (1u << j)))
@@ -631,6 +695,13 @@ unlock_lanes:
     if (ret)
       dmaengine_terminate_sync(md->weight_channels[j].channel);
     mutex_unlock(&md->weight_channels[j].lock);
+  }
+
+  if (results) {
+    if (ret) {
+      mydma_abort(rx);
+    }
+    mutex_unlock(&rx->lock);
   }
 
   if (copy_to_user((void __user *)arg, &args, sizeof(mydma_stream_args))) {

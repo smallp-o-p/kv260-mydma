@@ -88,7 +88,7 @@ typedef struct {
 
 #define MYDMA_W_MASK 0xFu
 #define MYDMA_STREAM_RESULTS 0x1u
-#define MYDMA_RESULT_BYTES 16
+#define MYDMA_RESULT_BYTES 16u
 
 #define MYDMA_INFO_CMD _IOR('(', 0x2a, mydma_info_args)
 #define MYDMA_STREAM_CMD _IOWR('(', 0x2b, mydma_stream_args)
