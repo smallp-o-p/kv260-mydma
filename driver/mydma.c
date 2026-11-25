@@ -566,6 +566,14 @@ done:
   return ret;
 }
 
+/*
+ * Implements the Stream command.
+ * If the RESULTS flag is set, this prepares an MM2S transfer from Memory to
+ * Device to transfer weights for the selected lanes we want to use. Then, it
+ * prepares and issues transfers an S2MM from Device to Memory. Finally, it
+ * issues the MM2S transfer. Users of this command basically transfer -> wait
+ * for results to come back.
+ */
 static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
                                unsigned long arg) {
   mydma_stream_args args;
@@ -622,6 +630,7 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
     dma_sync_single_for_device(c->dma_device, c->bus_addr, args.bytes[i],
                                DMA_TO_DEVICE);
 
+    // transfer weight from DDR memory into device
     desc = dmaengine_prep_slave_single(c->channel, c->bus_addr, args.bytes[i],
                                        DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT);
 
@@ -643,12 +652,14 @@ static long mydma_ioctl_stream(struct mydma *md, unsigned int cmd,
   }
 
   if (results) {
+    // this transfers the activation (results) back to DDR
     ret = mydma_arm_results(rx, n_lanes);
     if (ret)
       goto unlock_lanes;
   }
 
   t0 = ktime_get_ns();
+  // submit the actual transfer
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     if (!(args.mask & (1u << i)))
       continue;
