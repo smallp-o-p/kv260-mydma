@@ -1,72 +1,72 @@
 {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"0.578021",
-   "Default View_TopLeft":"265,607",
+   "Default View_ScaleFactor":"0.355814",
+   "Default View_TopLeft":"1121,157",
    "ExpandedHierarchyInLayout":"",
    "guistr":"# # String gsaved with Nlview 7.0r6  2020-01-29 bk=1.5227 VDI=41 GEI=36 GUI=JA:10.0 non-TLS
 #  -string -flagsOSRD
-preplace inst zynq_ultra_ps_e_0 -pg 1 -lvl 7 -x 2450 -y 640 -defaultsOSRD
-preplace inst smartconnect_0 -pg 1 -lvl 6 -x 1950 -y 110 -defaultsOSRD
-preplace inst proc_sys_reset_0 -pg 1 -lvl 2 -x 410 -y 760 -defaultsOSRD
-preplace inst axi_dma_0 -pg 1 -lvl 9 -x 3290 -y 690 -defaultsOSRD
-preplace inst ps8_0_axi_periph -pg 1 -lvl 8 -x 2940 -y 690 -defaultsOSRD
 preplace inst xlconstant_0 -pg 1 -lvl 1 -x 120 -y 800 -defaultsOSRD
-preplace inst xlconcat_0 -pg 1 -lvl 6 -x 1950 -y 840 -defaultsOSRD
-preplace inst axi_dma_1 -pg 1 -lvl 3 -x 780 -y 550 -defaultsOSRD
-preplace inst axi_dma_2 -pg 1 -lvl 3 -x 780 -y 760 -defaultsOSRD
-preplace inst axi_dma_3 -pg 1 -lvl 3 -x 780 -y 1040 -defaultsOSRD
-preplace inst smartconnect_1 -pg 1 -lvl 6 -x 1950 -y 270 -defaultsOSRD
-preplace inst smartconnect_2 -pg 1 -lvl 6 -x 1950 -y 610 -defaultsOSRD
-preplace inst smartconnect_3 -pg 1 -lvl 6 -x 1950 -y 1040 -defaultsOSRD
+preplace inst xlconcat_0 -pg 1 -lvl 6 -x 1940 -y 840 -defaultsOSRD
+preplace inst lane_checker_1 -pg 1 -lvl 4 -x 1160 -y 790 -defaultsOSRD
+preplace inst axi_dma_0 -pg 1 -lvl 9 -x 3410 -y 690 -defaultsOSRD
+preplace inst axi_dma_1 -pg 1 -lvl 3 -x 790 -y 550 -defaultsOSRD
+preplace inst axi_dma_2 -pg 1 -lvl 3 -x 790 -y 760 -defaultsOSRD
+preplace inst axi_dma_3 -pg 1 -lvl 3 -x 790 -y 1040 -defaultsOSRD
 preplace inst axi_dma_4 -pg 1 -lvl 5 -x 1510 -y 470 -defaultsOSRD
-preplace inst smartconnect_4 -pg 1 -lvl 6 -x 1950 -y 440 -defaultsOSRD
-preplace inst lane_checker_1 -pg 1 -lvl 4 -x 1180 -y 790 -defaultsOSRD
-preplace netloc axi_dma_0_mm2s_introut 1 5 5 1800 1150 NJ 1150 NJ 1150 NJ 1150 3470
-preplace netloc axi_dma_1_mm2s_introut 1 3 3 1000 610 1330J 660 1680J
-preplace netloc axi_dma_2_mm2s_introut 1 3 3 1040J 650 NJ 650 1690
-preplace netloc axi_dma_3_mm2s_introut 1 3 3 1070J 990 NJ 990 1780
-preplace netloc axi_dma_4_mm2s_introut 1 5 1 1770 550n
-preplace netloc axi_dma_4_s2mm_introut 1 5 1 1720 570n
-preplace netloc proc_sys_reset_0_peripheral_aresetn 1 2 7 590 860 1020 540 1300 300 1750 1140 2120J 1120 2790 960 3120J
-preplace netloc xlconcat_0_dout 1 6 1 2100 760n
+preplace inst proc_sys_reset_0 -pg 1 -lvl 2 -x 420 -y 760 -defaultsOSRD
+preplace inst smartconnect_0 -pg 1 -lvl 6 -x 1940 -y 110 -defaultsOSRD
+preplace inst smartconnect_1 -pg 1 -lvl 6 -x 1940 -y 270 -defaultsOSRD
+preplace inst smartconnect_2 -pg 1 -lvl 6 -x 1940 -y 610 -defaultsOSRD
+preplace inst smartconnect_4 -pg 1 -lvl 6 -x 1940 -y 440 -defaultsOSRD
+preplace inst smartconnect_3 -pg 1 -lvl 6 -x 1940 -y 1040 -defaultsOSRD
+preplace inst zynq_ultra_ps_e_0 -pg 1 -lvl 7 -x 2490 -y 640 -defaultsOSRD
+preplace inst axi_interconnect_0 -pg 1 -lvl 8 -x 3010 -y 620 -defaultsOSRD
+preplace netloc axi_dma_0_mm2s_introut 1 5 5 1780 1150 NJ 1150 NJ 1150 NJ 1150 3580
+preplace netloc axi_dma_1_mm2s_introut 1 3 3 990 600 1300J 740 1690J
+preplace netloc axi_dma_2_mm2s_introut 1 3 3 990J 620 1270J 750 1680
+preplace netloc axi_dma_3_mm2s_introut 1 3 3 1050J 990 NJ 990 1750
+preplace netloc axi_dma_4_mm2s_introut 1 5 1 1740 550n
+preplace netloc axi_dma_4_s2mm_introut 1 5 1 1700 570n
+preplace netloc proc_sys_reset_0_peripheral_aresetn 1 2 7 600 660 1020 610 1330 660 1720 1140 2130J 940 2830 880 3190J
+preplace netloc xlconcat_0_dout 1 6 1 2130 760n
 preplace netloc xlconstant_0_dout 1 1 1 N 800
-preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 1 8 210 660 580 450 990 450 1330 310 1740 730 2140 830 2780 940 3110
-preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 1 7 200 650 NJ 650 980J 620 1300J 700 NJ 700 2120J 820 2760
-preplace netloc axi_dma_0_M_AXIS_MM2S 1 3 7 1070 670 1290J 680 1700J 710 2110J 840 2770J 930 NJ 930 3460
-preplace netloc axi_dma_0_M_AXI_MM2S 1 5 5 1790 1130 NJ 1130 NJ 1130 NJ 1130 3480
-preplace netloc axi_dma_0_M_AXI_SG 1 5 5 1810 950 NJ 950 NJ 950 NJ 950 3490
-preplace netloc axi_dma_1_M_AXIS_MM2S 1 3 1 1010 550n
-preplace netloc axi_dma_1_M_AXI_MM2S 1 3 3 950 240 NJ 240 NJ
-preplace netloc axi_dma_1_M_AXI_SG 1 3 3 960 260 NJ 260 NJ
-preplace netloc axi_dma_2_M_AXIS_MM2S 1 3 1 950 760n
-preplace netloc axi_dma_2_M_AXI_MM2S 1 3 3 1030 630 NJ 630 1730J
-preplace netloc axi_dma_2_M_AXI_SG 1 3 3 970 280 NJ 280 1730J
-preplace netloc axi_dma_3_M_AXIS_MM2S 1 3 1 1050 790n
-preplace netloc axi_dma_3_M_AXI_MM2S 1 3 3 NJ 1020 NJ 1020 1690
-preplace netloc axi_dma_3_M_AXI_SG 1 3 3 NJ 1000 NJ 1000 1690
-preplace netloc axi_dma_4_M_AXIS_MM2S 1 3 3 1060 290 NJ 290 1720
-preplace netloc axi_dma_4_M_AXI_MM2S 1 5 1 1770 390n
-preplace netloc axi_dma_4_M_AXI_S2MM 1 5 1 1760 410n
-preplace netloc axi_dma_4_M_AXI_SG 1 5 1 1780 370n
-preplace netloc lane_checker_1_m_res 1 4 1 1320 420n
-preplace netloc ps8_0_axi_periph_M00_AXI 1 8 1 N 650
-preplace netloc ps8_0_axi_periph_M01_AXI 1 2 7 590 10 NJ 10 NJ 10 NJ 10 NJ 10 NJ 10 3100
-preplace netloc ps8_0_axi_periph_M02_AXI 1 2 7 600 20 NJ 20 NJ 20 NJ 20 NJ 20 NJ 20 3090
-preplace netloc ps8_0_axi_periph_M03_AXI 1 2 7 610 660 NJ 660 1310J 670 1710J 720 2090J 920 NJ 920 3100
-preplace netloc ps8_0_axi_periph_M04_AXI 1 4 5 1340 1160 NJ 1160 NJ 1160 NJ 1160 3090
+preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 1 8 200 860 590 450 980 460 1320 650 1710 1130 2110 460 2810 870 3180
+preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 1 7 210 1160 NJ 1160 NJ 1160 NJ 1160 NJ 1160 NJ 1160 2800
+preplace netloc axi_dma_0_M_AXIS_MM2S 1 3 7 1050 670 1280J 700 NJ 700 2080J 380 NJ 380 NJ 380 3600
+preplace netloc axi_dma_0_M_AXI_MM2S 1 5 5 1760 710 2090J 390 NJ 390 NJ 390 3580
+preplace netloc axi_dma_0_M_AXI_SG 1 5 5 1770 950 NJ 950 NJ 950 NJ 950 3590
+preplace netloc axi_dma_1_M_AXIS_MM2S 1 3 1 1000 550n
+preplace netloc axi_dma_1_M_AXI_MM2S 1 3 3 960 240 NJ 240 NJ
+preplace netloc axi_dma_1_M_AXI_SG 1 3 3 970 260 NJ 260 NJ
+preplace netloc axi_dma_2_M_AXIS_MM2S 1 3 1 960 760n
+preplace netloc axi_dma_2_M_AXI_MM2S 1 3 3 1010 640 NJ 640 1690J
+preplace netloc axi_dma_2_M_AXI_SG 1 3 3 970 630 NJ 630 1680J
+preplace netloc axi_dma_3_M_AXIS_MM2S 1 3 1 1030 790n
+preplace netloc axi_dma_3_M_AXI_MM2S 1 3 3 NJ 1020 NJ 1020 1680
+preplace netloc axi_dma_3_M_AXI_SG 1 3 3 NJ 1000 NJ 1000 1680
+preplace netloc axi_dma_4_M_AXIS_MM2S 1 3 3 1040 310 NJ 310 1700
+preplace netloc axi_dma_4_M_AXI_MM2S 1 5 1 1740 390n
+preplace netloc axi_dma_4_M_AXI_S2MM 1 5 1 1730 410n
+preplace netloc axi_dma_4_M_AXI_SG 1 5 1 1750 370n
+preplace netloc lane_checker_1_m_res 1 4 1 1310 420n
 preplace netloc smartconnect_0_M00_AXI 1 6 1 2130 110n
-preplace netloc smartconnect_1_M00_AXI 1 6 1 2090 270n
+preplace netloc smartconnect_1_M00_AXI 1 6 1 2100 270n
 preplace netloc smartconnect_2_M00_AXI 1 6 1 2100 580n
-preplace netloc smartconnect_3_M00_AXI 1 6 1 2130 600n
-preplace netloc smartconnect_4_M00_AXI 1 6 1 2100 440n
-preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 7 1 2760 520n
-preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM1_FPD 1 7 1 2770 540n
-levelinfo -pg 1 0 120 410 780 1180 1510 1950 2450 2940 3290 3510
-pagesize -pg 1 -db -bbox -sgen 0 0 3510 1170
+preplace netloc smartconnect_3_M00_AXI 1 6 1 2120 600n
+preplace netloc smartconnect_4_M00_AXI 1 6 1 2120 440n
+preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 7 1 2800 450n
+preplace netloc axi_interconnect_0_M00_AXI 1 8 1 3190 580n
+preplace netloc axi_interconnect_0_M01_AXI 1 2 7 600 10 NJ 10 NJ 10 NJ 10 NJ 10 NJ 10 3170
+preplace netloc axi_interconnect_0_M02_AXI 1 2 7 610 20 NJ 20 NJ 20 NJ 20 NJ 20 NJ 20 3160
+preplace netloc axi_interconnect_0_M03_AXI 1 2 7 620 650 NJ 650 1290J 720 NJ 720 2100J 860 NJ 860 3170
+preplace netloc axi_interconnect_0_M04_AXI 1 4 5 1340 730 NJ 730 2080J 850 NJ 850 3160
+preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM1_FPD 1 7 1 2820 470n
+levelinfo -pg 1 -40 120 420 790 1160 1510 1940 2490 3010 3410 3620
+pagesize -pg 1 -db -bbox -sgen -40 0 3620 1770
 "
 }
 {
-   "da_axi4_cnt":"21",
+   "da_axi4_cnt":"26",
    "da_board_cnt":"1",
    "da_clkrst_cnt":"4",
    "da_zynq_ultra_ps_e_cnt":"1"

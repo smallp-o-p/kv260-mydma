@@ -17,7 +17,7 @@ proc create_report { reportName command } {
   }
 }
 namespace eval ::optrace {
-  variable script "C:/Users/wtran013/Documents/memory_thing/memory_thing.runs/impl_1/memthing_wrapper.tcl"
+  variable script "C:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.runs/impl_1/memthing_wrapper.tcl"
   variable category "vivado_impl"
 }
 
@@ -130,17 +130,17 @@ OPTRACE "create in-memory project" START { }
   set_param project.singleFileAddWarning.threshold 0
 OPTRACE "create in-memory project" END { }
 OPTRACE "set parameters" START { }
-  set_property webtalk.parent_dir C:/Users/wtran013/Documents/memory_thing/memory_thing.cache/wt [current_project]
-  set_property parent.project_path C:/Users/wtran013/Documents/memory_thing/memory_thing.xpr [current_project]
-  set_property ip_output_repo C:/Users/wtran013/Documents/memory_thing/memory_thing.cache/ip [current_project]
+  set_property webtalk.parent_dir C:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.cache/wt [current_project]
+  set_property parent.project_path C:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.xpr [current_project]
+  set_property ip_output_repo C:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.cache/ip [current_project]
   set_property ip_cache_permissions {read write} [current_project]
   set_property XPM_LIBRARIES {XPM_CDC XPM_FIFO XPM_MEMORY} [current_project]
 OPTRACE "set parameters" END { }
 OPTRACE "add files" START { }
-  add_files -quiet C:/Users/wtran013/Documents/memory_thing/memory_thing.runs/synth_1/memthing_wrapper.dcp
+  add_files -quiet C:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.runs/synth_1/memthing_wrapper.dcp
   set_msg_config -source 4 -id {BD 41-1661} -limit 0
   set_param project.isImplRun true
-  add_files C:/Users/wtran013/Documents/memory_thing/memory_thing.srcs/sources_1/bd/memthing/memthing.bd
+  add_files C:/Users/wtran013/Documents/kv260-mydma/hw/memory_thing/memory_thing.srcs/sources_1/bd/memthing/memthing.bd
   set_param project.isImplRun false
 OPTRACE "read constraints: implementation" START { }
 OPTRACE "read constraints: implementation" END { }
