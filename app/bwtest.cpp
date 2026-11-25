@@ -14,6 +14,7 @@
 // Build in WSL:   make -C app
 // Run on board:   sudo ./bwtest              # 16 MiB per engine, 20 runs each
 //                 sudo ./bwtest 8 50         # 8 MiB per engine, 50 runs
+//                 sudo ./bwtest --diag       # each piece alone, with IRQ counts
 //
 // It runs every engine alone, then the pairs, triples and all four. The pairs
 // show whether two HP ports share a DDR controller port: a pair that shares
@@ -116,9 +117,103 @@ Result run_once(int fd, unsigned mask, std::uint32_t bytes) {
     return r;
 }
 
+// ---- --diag: test each piece on its own, and show which DMA IRQs fire ----
+
+void print_dma_irqs(const char *when) {
+    std::printf("  DMA interrupt counts %s:\n", when);
+    FILE *f = std::fopen("/proc/interrupts", "r");
+    if (!f) {
+        std::printf("    (can't read /proc/interrupts)\n");
+        return;
+    }
+    char line[512];
+    while (std::fgets(line, sizeof line, f))
+        if (std::strstr(line, "dma") && !std::strstr(line, "zynqmp"))
+            std::printf("    %s", line);
+    std::fclose(f);
+}
+
+void print_beat(const char *what) {
+    std::printf("  %s: %08x %08x %08x %08x\n", what, g_res[3], g_res[2], g_res[1], g_res[0]);
+}
+
+int diag(int fd) {
+    void *rp = ::mmap(nullptr, MYDMA_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+                      MYDMA_RX_OFFSET);
+    void *tp = ::mmap(nullptr, MYDMA_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+                      MYDMA_TX_OFFSET);
+    if (rp == MAP_FAILED || tp == MAP_FAILED)
+        die("mmap act tx/rx");
+    g_res = static_cast<volatile std::uint32_t *>(rp);
+    auto *t = static_cast<std::uint32_t *>(tp);
+    int fails = 0;
+
+    print_dma_irqs("at start");
+
+    // 1. Activation path only: act MM2S -> lane_checker input 4 -> act S2MM.
+    //    No weight engines involved. A stale result from an earlier failed
+    //    run would show up here with that lane's id instead of 04.
+    std::printf("\n[1] activation path: XFER 8 KiB in, 16 B out\n");
+    for (std::uint32_t k = 0; k < 8192 / 4; ++k)
+        t[k] = k;
+    clear_results(1);
+    mydma_xfer_args xa{};
+    xa.tx_bytes = 8192;
+    xa.rx_bytes = MYDMA_RESULT_BYTES;
+    if (::ioctl(fd, MYDMA_XFER_CMD, &xa) < 0) {
+        std::printf("  FAILED: %s\n", std::strerror(errno));
+        ++fails;
+    } else {
+        std::printf("  ok, %u bytes back\n", xa.rx_bytes);
+    }
+    print_beat("result beat (want c0ffee04 00000200 ...)");
+    print_dma_irqs("after [1]");
+
+    // 2. Each weight engine alone, 64 KiB, with results.
+    mydma_info_args info{};
+    if (::ioctl(fd, MYDMA_INFO_CMD, &info) < 0)
+        die("ioctl MYDMA_INFO_CMD");
+    const std::uint32_t bytes = 64 * 1024;
+    for (unsigned i = 0; i < NW; ++i) {
+        if (!(info.w_mask & (1u << i)))
+            continue;
+        std::printf("\n[2.%u] w%u alone: STREAM 64 KiB with results\n", i, i);
+        void *p = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+                         off_t(MYDMA_W_OFFSET(i)));
+        if (p == MAP_FAILED)
+            die("mmap weight buffer");
+        std::memset(p, 0x11 * (i + 1), bytes);
+        ::munmap(p, bytes);
+        clear_results(1);
+        mydma_stream_args a{};
+        a.mask = 1u << i;
+        a.bytes[i] = bytes;
+        a.flags = MYDMA_STREAM_RESULTS;
+        if (::ioctl(fd, MYDMA_STREAM_CMD, &a) < 0) {
+            std::printf("  FAILED: %s\n", std::strerror(errno));
+            ++fails;
+        } else {
+            std::printf("  ok, lane done after %llu ns\n", (unsigned long long)a.done_ns[i]);
+        }
+        std::printf("  result beat (want c0ffee0%u 00001000 00000000 00000000): ", i);
+        std::printf("%08x %08x %08x %08x\n", g_res[3], g_res[2], g_res[1], g_res[0]);
+        print_dma_irqs("after this step");
+    }
+
+    std::printf("\n%s. Send this output and `dmesg | tail -30`.\n",
+                fails ? "Some steps FAILED" : "All steps passed");
+    return fails ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
+    if (argc > 1 && std::strcmp(argv[1], "--diag") == 0) {
+        int fd = ::open("/dev/mydma", O_RDWR);
+        if (fd < 0)
+            die("open /dev/mydma");
+        return diag(fd);
+    }
     const unsigned long mib = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 16;
     const long runs = argc > 2 ? std::strtol(argv[2], nullptr, 0) : 20;
     if (runs < 1) {
