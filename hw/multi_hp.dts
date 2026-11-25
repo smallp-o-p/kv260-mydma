@@ -176,6 +176,8 @@
 			/* Binds mydma.ko to the DMA's two channels; creates /dev/mydma. */
 			mydma {
 				compatible = "acme,mydma";
+				clocks = <&zynqmp_clk 71>;
+				clock-names = "pl0";
 				dmas = <&axi_dma_0 0>, <&axi_dma_0 1>,
 						<&dma_w0 0>, <&dma_w1 0>, <&dma_w2 0>, <&dma_w3 0>;
 				dma-names = "tx", "rx", "w0", "w1", "w2", "w3";
