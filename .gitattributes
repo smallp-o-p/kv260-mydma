@@ -1,0 +1,22 @@
+# Keep LF in the repo and in checkouts for everything that runs on Linux
+# (bash, python, dtc, kbuild), even when committed from Windows with
+# core.autocrlf off. Vivado's own project files are left alone.
+*.sh    text eol=lf
+*.py    text eol=lf
+*.dts   text eol=lf
+*.dtsi  text eol=lf
+*.c     text eol=lf
+*.h     text eol=lf
+*.cpp   text eol=lf
+*.v     text eol=lf
+*.sv    text eol=lf
+*.tcl   text eol=lf
+Makefile text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+
+# Binaries: never touch.
+*.bit     binary
+*.bin     binary
+*.xsa     binary
+*.dtbo    binary

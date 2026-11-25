@@ -31,6 +31,9 @@
 			/*
 			 * PL clock 0 (pl_clk0), which drives the DMA. Set this to the
 			 * frequency configured for pl_clk0 in your Vivado design.
+			 * On the KV260 this request alone leaves the clock at 100 MHz
+			 * (the PMU firmware refuses it); mydma.ko sets the rate for
+			 * real, see the mydma node below.
 			 */
 			clocking0: clocking0 {
 				compatible = "xlnx,fclk";
@@ -173,9 +176,17 @@
 			};
 
 
-			/* Binds mydma.ko to the DMA's two channels; creates /dev/mydma. */
+			/*
+			 * Binds mydma.ko to the DMA channels; creates /dev/mydma.
+			 * `clocks` hands mydma pl_clk0 so it can set it to
+			 * pl_clk_hz (default 250 MHz) at insmod; the clocking0
+			 * node above alone doesn't manage it (see
+			 * mydma_pl_clk_setup() in driver/mydma.c).
+			 */
 			mydma {
 				compatible = "acme,mydma";
+				clocks = <&zynqmp_clk 71>;	/* pl0_ref = pl_clk0 */
+				clock-names = "pl0";
 				dmas = <&axi_dma_0 0>, <&axi_dma_0 1>,
 						<&dma_w0 0>, <&dma_w1 0>, <&dma_w2 0>, <&dma_w3 0>;
 				dma-names = "tx", "rx", "w0", "w1", "w2", "w3";

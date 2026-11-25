@@ -55,6 +55,10 @@
  */
 #include "linux/errno.h"
 #include <linux/atomic.h>
+#include <linux/bitfield.h>    /* FIELD_GET(), FIELD_PREP() */
+#include <linux/clk.h>         /* clk_get_rate(), clk_set_rate() */
+#include <linux/firmware/xlnx-zynqmp.h> /* zynqmp_pm_request_node() */
+#include <linux/io.h>          /* ioremap(), readl(), writel() */
 #include <linux/completion.h>  /* "sleep until X happens" primitive */
 #include <linux/dma-mapping.h> /* dma_alloc_coherent() and friends */
 #include <linux/dmaengine.h>   /* the dmaengine client API */
@@ -96,6 +100,28 @@ MODULE_PARM_DESC(wbuf_mb,
                  "Size of Weight Lane buffer in MiB (default = 16MiB)");
 
 #define MYDMA_WEIGHT_BUF_SIZE (wbuf_mb << 20)
+
+/*
+ * PL clock 0 (pl_clk0), which clocks every DMA and the stream logic. Vivado's
+ * PL0 setting only lives in the bitstream's metadata: nothing on Linux applies
+ * it, so the board keeps whatever the boot firmware chose (100 MHz). See
+ * mydma_pl_clk_setup() for how the driver fixes that on every load.
+ */
+static unsigned int pl_clk_hz = 250000000u;
+module_param(pl_clk_hz, uint, 0444);
+MODULE_PARM_DESC(pl_clk_hz,
+                 "Rate to set pl_clk0 to at probe (default 250000000, 0 = leave it)");
+
+static bool pl_clk_poke = true;
+module_param(pl_clk_poke, bool, 0444);
+MODULE_PARM_DESC(pl_clk_poke,
+                 "If the clock framework can't set pl_clk0, write PL0_REF_CTRL directly (default 1)");
+
+/* CRL_APB.PL0_REF_CTRL: CLKACT[24] DIVISOR1[21:16] DIVISOR0[13:8] SRCSEL[2:0] */
+#define MYDMA_PL0_REF_CTRL 0xFF5E00C0u
+#define MYDMA_PL_DIV0 GENMASK(13, 8)
+#define MYDMA_PL_DIV1 GENMASK(21, 16)
+#define MYDMA_PL_DIV_MAX 63u
 
 struct mydma_weight_channel {
   struct device *dev;
@@ -188,6 +214,7 @@ struct mydma_chan {
 /* The whole device: both directions plus the /dev node. */
 struct mydma {
   struct device *dev;
+  struct clk *pl_clk; /* pl_clk0 (clocks = <&zynqmp_clk 71> in the DT), or NULL */
   struct mydma_weight_channel weight_channels[MYDMA_W_NUM_CHANNELS];
   struct mydma_chan act_tx;
   struct mydma_chan act_rx;
@@ -878,6 +905,153 @@ static void mydma_weight_channel_free(struct mydma_weight_channel *c) {
 }
 
 /*
+ * ---- pl_clk0 rate ----------------------------------------------------------
+ *
+ * The overlay's clocking0 node asks for 250 MHz with assigned-clock-rates,
+ * and the kernel passes that to clk_set_rate() when the fclk driver binds,
+ * yet the board stays at 100 MHz. The most likely reason: Linux changes
+ * ZynqMP clocks through the PMU firmware, and the firmware (pm_clock.c,
+ * PmClockCheckPermission) only lets a processor change a clock if that
+ * processor has requested the device the clock feeds. pl0_ref feeds the "pl"
+ * node (NODE_PL), which nothing on Kria's Linux requests, so the firmware
+ * answers XST_PM_NO_ACCESS (-EACCES). If that is it, dmesg has a line like
+ *   zynqmp_clk_divider_set_rate() set divider failed for pl0_ref_div0, ret = -13
+ *
+ * So, at probe:
+ *   1. Request NODE_PL from the firmware (the APU then owns the PL clocks).
+ *   2. clk_set_rate(pl_clk0, pl_clk_hz) through the normal clock framework.
+ *   3. If that still fails, and pl_clk_poke=1, write the two dividers in
+ *      PL0_REF_CTRL directly (what `devmem 0xFF5E00C0 32 0x01010600` did by
+ *      hand). The clock framework then still believes the old rate, so
+ *      clk_summary shows 100 MHz even though the hardware runs at 250.
+ *   4. Log the result together with the register, so one dmesg line tells
+ *      which step worked.
+ *
+ * NODE_PL is never released: releasing the last user of the PL can let the
+ * firmware power the PL domain down, which would wipe the bitstream. Asking
+ * again on the next insmod is harmless (the firmware answers "double request").
+ *
+ * Changing the rate is safe here because nothing is streaming yet: probe runs
+ * before /dev/mydma exists.
+ */
+
+/* Read PL0_REF_CTRL. Returns 0 if the register can't be mapped. */
+static u32 mydma_pl0_ctrl_read(void) {
+  void __iomem *r = ioremap(MYDMA_PL0_REF_CTRL, 4);
+  u32 v;
+
+  if (!r)
+    return 0;
+  v = readl(r);
+  iounmap(r);
+  return v;
+}
+
+/*
+ * Step 3: pick DIVISOR0 x DIVISOR1 so that src / (d0 * d1) is the fastest
+ * rate that is not above `hz`, and write them. `src` is the rate of the PLL
+ * feeding the mux (1500 MHz IOPLL on this board).
+ */
+static int mydma_pl0_poke(struct device *dev, unsigned long src,
+                          unsigned long hz, unsigned long *out) {
+  void __iomem *r;
+  unsigned long best = 0, rate;
+  u32 d0, d1, bd0 = 0, bd1 = 0, v;
+
+  for (d0 = 1; d0 <= MYDMA_PL_DIV_MAX; d0++)
+    for (d1 = 1; d1 <= MYDMA_PL_DIV_MAX; d1++) {
+      rate = src / (d0 * d1);
+      if (rate <= hz && rate > best) {
+        best = rate;
+        bd0 = d0;
+        bd1 = d1;
+      }
+    }
+  if (!best)
+    return -ERANGE;
+
+  r = ioremap(MYDMA_PL0_REF_CTRL, 4);
+  if (!r)
+    return -ENOMEM;
+  v = readl(r);
+  v &= ~(MYDMA_PL_DIV0 | MYDMA_PL_DIV1);
+  v |= FIELD_PREP(MYDMA_PL_DIV0, bd0) | FIELD_PREP(MYDMA_PL_DIV1, bd1);
+  writel(v, r);
+  iounmap(r);
+
+  dev_warn(dev, "pl_clk0: clock framework refused, wrote PL0_REF_CTRL = 0x%08x"
+                " directly (div %u x %u); clk_summary will show the old rate\n",
+           v, bd0, bd1);
+  *out = best;
+  return 0;
+}
+
+static void mydma_pl_clk_off(void *data) { clk_disable_unprepare(data); }
+
+static int mydma_pl_clk_setup(struct mydma *md) {
+  struct device *dev = md->dev;
+  unsigned long before, after;
+  u32 ctrl, d0, d1;
+  int ret, req;
+
+  /* Optional: an overlay without `clocks` on the mydma node skips all this. */
+  md->pl_clk = devm_clk_get_optional(dev, "pl0");
+  if (IS_ERR(md->pl_clk))
+    return dev_err_probe(dev, PTR_ERR(md->pl_clk), "pl0 clock\n");
+  if (!md->pl_clk) {
+    dev_info(dev, "no pl0 clock in the device tree, not touching pl_clk0\n");
+    return 0;
+  }
+
+  /* Keep it running while we are bound (it already is, for the DMAs). */
+  ret = clk_prepare_enable(md->pl_clk);
+  if (ret)
+    return dev_err_probe(dev, ret, "enable pl0 clock\n");
+  ret = devm_add_action_or_reset(dev, mydma_pl_clk_off, md->pl_clk);
+  if (ret)
+    return ret;
+
+  before = clk_get_rate(md->pl_clk);
+  if (!pl_clk_hz || before == pl_clk_hz)
+    goto report;
+
+  /* Step 1. */
+  req = zynqmp_pm_request_node(NODE_PL, ZYNQMP_PM_CAPABILITY_ACCESS, 0,
+                               ZYNQMP_PM_REQUEST_ACK_BLOCKING);
+  if (req)
+    dev_dbg(dev, "request NODE_PL: %d\n", req);
+
+  /* Step 2. */
+  ret = clk_set_rate(md->pl_clk, pl_clk_hz);
+  after = clk_get_rate(md->pl_clk);
+  if (!ret && after == pl_clk_hz)
+    goto report;
+
+  dev_warn(dev, "pl_clk0: clk_set_rate(%u) = %d, rate now %lu (request NODE_PL = %d)\n",
+           pl_clk_hz, ret, after, req);
+  if (!pl_clk_poke)
+    goto report;
+
+  /* Step 3: work out the PLL rate from the dividers that give `after`. */
+  ctrl = mydma_pl0_ctrl_read();
+  d0 = FIELD_GET(MYDMA_PL_DIV0, ctrl);
+  d1 = FIELD_GET(MYDMA_PL_DIV1, ctrl);
+  if (!ctrl || !d0 || !d1)
+    goto report;
+  ret = mydma_pl0_poke(dev, after * d0 * d1, pl_clk_hz, &after);
+  if (ret)
+    dev_err(dev, "pl_clk0: direct write failed: %d\n", ret);
+  dev_info(dev, "pl_clk0 = %lu Hz (was %lu), PL0_REF_CTRL = 0x%08x\n", after,
+           before, mydma_pl0_ctrl_read());
+  return 0;
+
+report:
+  dev_info(dev, "pl_clk0 = %lu Hz (was %lu), PL0_REF_CTRL = 0x%08x\n",
+           clk_get_rate(md->pl_clk), before, mydma_pl0_ctrl_read());
+  return 0;
+}
+
+/*
  * probe: called when the kernel matches our driver to the device tree node.
  * Everything the device needs is set up here; returning an error leaves the
  * device unbound (and nothing half-allocated, thanks to the goto ladder).
@@ -900,6 +1074,10 @@ static int mydma_probe(struct platform_device *pdev) {
   if (!md)
     return -ENOMEM;
   md->dev = dev;
+
+  ret = mydma_pl_clk_setup(md);
+  if (ret)
+    return ret;
 
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     ret = mydma_chan_init_weight(dev, md->weight_channels + i,
