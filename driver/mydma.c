@@ -532,9 +532,12 @@ static long mydma_arm_results(struct mydma_chan *rx, unsigned int n_lanes) {
   struct dma_async_tx_descriptor *desc = NULL;
   int ret = 0;
 
-  ret = mydma_rearm(rx);
-  if (ret)
-    return ret;
+  /* Recover from the reset quirk (above) before using this channel. */
+  if (atomic_xchg(&rx->irq_lost, 0) || !rx->chan) {
+    ret = mydma_rearm(rx);
+    if (ret)
+      return ret;
+  }
 
   reinit_completion(&rx->done);
 
