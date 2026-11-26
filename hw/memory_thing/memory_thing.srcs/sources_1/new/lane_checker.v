@@ -17,11 +17,26 @@
 // waiting to go out, that lane holds TREADY low, so nothing is lost if the
 // next transfer starts before the S2MM has taken the result.
 //
+// MAX_SKEW (parameter, default 0 = off): lockstep mode for the weight lanes.
+// With MAX_SKEW = K, a weight lane that is more than K beats ahead of any
+// other weight lane still mid-packet holds TREADY low until that lane catches
+// up. That's how the matmul array will consume the lanes: it needs one beat
+// from every lane at once, so a fast lane can only run a FIFO's depth ahead.
+// The back-pressure throttles the fast lanes' DMAs and frees DDR bandwidth for
+// the slow one, so bwtest's all-four number then shows what decode will get.
+// Set K to the per-lane FIFO depth (256). Lanes not mid-packet (idle, or done
+// with their transfer) never hold anyone back, so singles and pairs still work.
+// The hold flag is registered, so a lane can overshoot K by a beat or two.
+//
 // In Vivado: Add Sources > this file, then Add Module > lane_checker. The
 // X_INTERFACE attributes give it AXI-Stream ports s_w0..s_w3, s_act, m_res.
+// After editing this file, refresh the module in the block design; set the
+// parameter with  set_property CONFIG.MAX_SKEW 256 [get_bd_cells lane_checker_1]
 `timescale 1ns / 1ps
 
-module lane_checker (
+module lane_checker #(
+    parameter integer MAX_SKEW = 0      // 0 = free-running lanes; 256 = lockstep
+) (
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 aclk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF s_w0:s_w1:s_w2:s_w3:s_act:m_res, ASSOCIATED_RESET aresetn" *)
     input  wire         aclk,
@@ -76,11 +91,31 @@ module lane_checker (
     assign tlast  = {s_act_tlast,  s_w3_tlast,  s_w2_tlast,  s_w1_tlast,  s_w0_tlast};
 
     wire [N-1:0] pending;                 // result latched, not yet sent
-    wire [N-1:0] tready = ~pending;
+    wire [N-1:0] hold;                    // lockstep: lane is too far ahead
+    wire [N-1:0] tready = ~pending & ~hold;
     assign {s_act_tready, s_w3_tready, s_w2_tready, s_w1_tready, s_w0_tready} = tready;
 
     wire [63:0] res_x [0:N-1];            // finished packet, waiting to go out
     wire [31:0] res_n [0:N-1];
+    wire [31:0] cnt   [0:N-1];            // beats so far in the current packet
+
+    // Lockstep: weight lane a holds while it's more than MAX_SKEW beats ahead
+    // of a weight lane b that is mid-packet (cnt != 0). Never applies to act.
+    reg [3:0] hold_w;
+    integer a, b;
+    always @(posedge aclk) begin
+        if (!aresetn || MAX_SKEW == 0)
+            hold_w <= 4'd0;
+        else
+            for (a = 0; a < 4; a = a + 1) begin
+                hold_w[a] <= 1'b0;
+                for (b = 0; b < 4; b = b + 1)
+                    if (b != a && cnt[b] != 32'd0 &&
+                        cnt[a] > cnt[b] + MAX_SKEW)
+                        hold_w[a] <= 1'b1;
+            end
+    end
+    assign hold = {1'b0, hold_w};
 
     // Output: lowest-numbered pending lane goes first.
     reg [2:0] sel;
@@ -103,12 +138,13 @@ module lane_checker (
             reg  [63:0] acc_x, rx;        // running XOR / finished XOR
             reg  [31:0] acc_n, rn;        // beats so far / finished count
             reg         pend;
-            wire        take = tvalid[i] && !pend;
+            wire        take = tvalid[i] && tready[i];
             wire [63:0] fold = tdata[i][127:64] ^ tdata[i][63:0];
 
             assign pending[i] = pend;
             assign res_x[i]   = rx;
             assign res_n[i]   = rn;
+            assign cnt[i]     = acc_n;
 
             always @(posedge aclk) begin
                 if (!aresetn) begin
