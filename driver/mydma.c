@@ -53,12 +53,14 @@
  * file). A match calls mydma_probe() with that device. The `dmas` and
  * `dma-names` properties are what dma_request_chan(dev, "tx") reads later.
  */
-#include "linux/errno.h"
 #include <linux/atomic.h>
+#include <linux/clk.h>
 #include <linux/completion.h>  /* "sleep until X happens" primitive */
 #include <linux/dma-mapping.h> /* dma_alloc_coherent() and friends */
 #include <linux/dmaengine.h>   /* the dmaengine client API */
-#include <linux/fs.h>          /* struct file_operations */
+#include <linux/errno.h>
+#include <linux/firmware/xlnx-zynqmp.h>
+#include <linux/fs.h> /* struct file_operations */
 #include <linux/ioctl.h>
 #include <linux/jiffies.h>    /* msecs_to_jiffies(): kernel time units */
 #include <linux/miscdevice.h> /* the easy way to get a /dev node */
@@ -94,6 +96,10 @@ static unsigned int wbuf_mb = 16u;
 module_param(wbuf_mb, uint, 0444);
 MODULE_PARM_DESC(wbuf_mb,
                  "Size of Weight Lane buffer in MiB (default = 16MiB)");
+
+static unsigned int pl_clk_hz = 250000000u;
+module_param(pl_clk_hz, uint, 0444);
+MODULE_PARM_DESC(pl_clk_hz, "PL clock rate (0 = leave at current rate)");
 
 #define MYDMA_WEIGHT_BUF_SIZE (wbuf_mb << 20)
 
@@ -880,6 +886,37 @@ static void mydma_weight_channel_free(struct mydma_weight_channel *c) {
                        c->bus_addr, DMA_TO_DEVICE);
 }
 
+static int mydma_setup_clock(struct device *dev) {
+  struct clk *clk;
+  unsigned long curr_clock_rate;
+  int ret, req;
+
+  clk = devm_clk_get_optional(dev, "pl0");
+
+  if (IS_ERR(clk))
+    return dev_err_probe(dev, PTR_ERR(clk), "pl0 clock\n");
+
+  // leave the clock as it is
+  if (!clk || pl_clk_hz == 0)
+    return 0;
+
+  curr_clock_rate = clk_get_rate(clk);
+
+  // setup clock
+  if (curr_clock_rate != pl_clk_hz) {
+    req = zynqmp_pm_request_node(NODE_PL, ZYNQMP_PM_CAPABILITY_ACCESS, 0,
+                                 ZYNQMP_PM_REQUEST_ACK_BLOCKING);
+
+    ret = clk_set_rate(clk, pl_clk_hz);
+    if (ret) {
+      dev_warn(dev, "pl_clk0: set_rate = %d, request PL = %d\n", ret, req);
+    }
+  }
+
+  dev_info(dev, "pl_clk0 set to %lu Hz\n", clk_get_rate(clk));
+
+  return 0;
+}
 /*
  * probe: called when the kernel matches our driver to the device tree node.
  * Everything the device needs is set up here; returning an error leaves the
@@ -903,6 +940,10 @@ static int mydma_probe(struct platform_device *pdev) {
   if (!md)
     return -ENOMEM;
   md->dev = dev;
+
+  ret = mydma_setup_clock(dev);
+  if (ret)
+    return ret;
 
   for (i = 0; i < MYDMA_W_NUM_CHANNELS; i++) {
     ret = mydma_chan_init_weight(dev, md->weight_channels + i,
