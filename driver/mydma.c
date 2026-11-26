@@ -53,14 +53,14 @@
  * file). A match calls mydma_probe() with that device. The `dmas` and
  * `dma-names` properties are what dma_request_chan(dev, "tx") reads later.
  */
-#include "linux/errno.h"
 #include <linux/atomic.h>
-#include <linux/clk.h>         /* clk_get_rate(), clk_set_rate() */
-#include <linux/firmware/xlnx-zynqmp.h> /* zynqmp_pm_request_node() */
+#include <linux/clk.h>
 #include <linux/completion.h>  /* "sleep until X happens" primitive */
 #include <linux/dma-mapping.h> /* dma_alloc_coherent() and friends */
 #include <linux/dmaengine.h>   /* the dmaengine client API */
-#include <linux/fs.h>          /* struct file_operations */
+#include <linux/errno.h>
+#include <linux/firmware/xlnx-zynqmp.h>
+#include <linux/fs.h> /* struct file_operations */
 #include <linux/ioctl.h>
 #include <linux/jiffies.h>    /* msecs_to_jiffies(): kernel time units */
 #include <linux/miscdevice.h> /* the easy way to get a /dev node */
@@ -97,19 +97,11 @@ module_param(wbuf_mb, uint, 0444);
 MODULE_PARM_DESC(wbuf_mb,
                  "Size of Weight Lane buffer in MiB (default = 16MiB)");
 
-#define MYDMA_WEIGHT_BUF_SIZE (wbuf_mb << 20)
-
-/*
- * PL clock 0 (pl_clk0), which clocks every DMA and the stream logic. Vivado's
- * PL0 setting only lives in the bitstream's metadata: nothing on Linux applies
- * it, so the board keeps whatever the boot firmware chose (100 MHz). See
- * mydma_pl_clk_setup() for how the driver fixes that on every load.
- */
 static unsigned int pl_clk_hz = 250000000u;
 module_param(pl_clk_hz, uint, 0444);
-MODULE_PARM_DESC(pl_clk_hz,
-                 "Rate to set pl_clk0 to at probe (default 250000000, 0 = leave it)");
+MODULE_PARM_DESC(pl_clk_hz, "PL clock rate (0 = leave at current rate)");
 
+#define MYDMA_WEIGHT_BUF_SIZE (wbuf_mb << 20)
 
 struct mydma_weight_channel {
   struct device *dev;
@@ -546,9 +538,12 @@ static long mydma_arm_results(struct mydma_chan *rx, unsigned int n_lanes) {
   struct dma_async_tx_descriptor *desc = NULL;
   int ret = 0;
 
-  ret = mydma_rearm(rx);
-  if (ret)
-    return ret;
+  /* Recover from the reset quirk (above) before using this channel. */
+  if (atomic_xchg(&rx->irq_lost, 0) || !rx->chan) {
+    ret = mydma_rearm(rx);
+    if (ret)
+      return ret;
+  }
 
   reinit_completion(&rx->done);
 
@@ -891,41 +886,37 @@ static void mydma_weight_channel_free(struct mydma_weight_channel *c) {
                        c->bus_addr, DMA_TO_DEVICE);
 }
 
-/*
- * ---- pl_clk0 rate ----------------------------------------------------------
- *
- * Vivado's PL0 = 250 MHz never reaches Linux, and the overlay's
- * assigned-clock-rates doesn't take: Linux changes ZynqMP clocks through the
- * PMU firmware, which (pm_clock.c, PmClockCheckPermission) only lets a
- * processor change a clock once it has requested the device the clock feeds.
- * pl0_ref feeds NODE_PL, which nothing on Kria's Linux requests. So request
- * it, then set the rate. Never release NODE_PL: releasing the PL's last user
- * can let the firmware power the PL down. A second request on re-insmod is
- * harmless. Safe to change here: nothing streams until /dev/mydma exists.
- */
-static int mydma_pl_clk_setup(struct device *dev) {
+static int mydma_setup_clock(struct device *dev) {
   struct clk *clk;
-  unsigned long before;
+  unsigned long curr_clock_rate;
   int ret, req;
 
-  clk = devm_clk_get_optional(dev, "pl0"); /* clock-names = "pl0" in the DT */
+  clk = devm_clk_get_optional(dev, "pl0");
+
   if (IS_ERR(clk))
     return dev_err_probe(dev, PTR_ERR(clk), "pl0 clock\n");
-  if (!clk || !pl_clk_hz)
-    return 0; /* old overlay, or told to leave it alone */
 
-  before = clk_get_rate(clk);
-  if (before != pl_clk_hz) {
+  // leave the clock as it is
+  if (!clk || pl_clk_hz == 0)
+    return 0;
+
+  curr_clock_rate = clk_get_rate(clk);
+
+  // setup clock
+  if (curr_clock_rate != pl_clk_hz) {
     req = zynqmp_pm_request_node(NODE_PL, ZYNQMP_PM_CAPABILITY_ACCESS, 0,
                                  ZYNQMP_PM_REQUEST_ACK_BLOCKING);
+
     ret = clk_set_rate(clk, pl_clk_hz);
-    if (ret)
+    if (ret) {
       dev_warn(dev, "pl_clk0: set_rate = %d, request PL = %d\n", ret, req);
+    }
   }
-  dev_info(dev, "pl_clk0 = %lu Hz (was %lu)\n", clk_get_rate(clk), before);
+
+  dev_info(dev, "pl_clk0 set to %lu Hz\n", clk_get_rate(clk));
+
   return 0;
 }
-
 /*
  * probe: called when the kernel matches our driver to the device tree node.
  * Everything the device needs is set up here; returning an error leaves the
@@ -950,7 +941,7 @@ static int mydma_probe(struct platform_device *pdev) {
     return -ENOMEM;
   md->dev = dev;
 
-  ret = mydma_pl_clk_setup(dev);
+  ret = mydma_setup_clock(dev);
   if (ret)
     return ret;
 
