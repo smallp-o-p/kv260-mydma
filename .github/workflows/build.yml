@@ -1,5 +1,5 @@
 # Builds everything that goes onto the board, on every push:
-#   mydma.ko, the memory_thing app folder, and the dmatest / dmatest_rw / bwtest binaries.
+#   mydma.ko, the memory_thing and multi_hp app folders, and the dmatest / dmatest_rw / bwtest binaries.
 # Download them from the run's "kv260-board-files" artifact.
 name: build
 
@@ -34,8 +34,12 @@ jobs:
       - name: Package Kria app
         run: bash hw/package.sh
 
-      - name: Check multi_hp overlay
-        run: dtc -@ -q -I dts -O dtb -o /dev/null hw/multi_hp.dts
+      # Four-weight-engine shell. Packages whatever bitstream is committed at
+      # hw/memory_thing/multi_hp.bit, so copy Vivado's
+      # memory_thing.runs/impl_1/memthing_wrapper.bit there and commit it
+      # after each rebuild. bit2bin.py prints the bitstream's build date.
+      - name: Package multi_hp app
+        run: APP=multi_hp bash hw/package.sh hw/memory_thing/multi_hp.bit
 
       - name: Build user-space test
         run: make -C app
@@ -44,7 +48,7 @@ jobs:
         run: |
           mkdir -p out/board
           cp driver/mydma.ko app/dmatest app/dmatest_rw app/bwtest out/board/
-          cp -r out/memory_thing out/board/
+          cp -r out/memory_thing out/multi_hp out/board/
 
       - uses: actions/upload-artifact@v4
         with:
