@@ -1,5 +1,6 @@
 # Builds everything that goes onto the board, on every push:
-#   mydma.ko, the memory_thing and multi_hp app folders, and the dmatest / dmatest_rw / bwtest binaries.
+#   mydma.ko, the memory_thing and multi_hp app folders, the axis_demo app if its bitstream is committed,
+#   and the dmatest / dmatest_rw / bwtest / axisdemo binaries.
 # Download them from the run's "kv260-board-files" artifact.
 name: build
 
@@ -41,14 +42,25 @@ jobs:
       - name: Package multi_hp app
         run: APP=multi_hp bash hw/package.sh hw/memory_thing/multi_hp.bit
 
+      # AXI in/out demo (hw/axis_demo). Skipped until its bitstream is
+      # committed at hw/axis_demo/axis_demo.bit.
+      - name: Package axis_demo app
+        run: |
+          if [ -f hw/axis_demo/axis_demo.bit ]; then
+            APP=axis_demo bash hw/package.sh hw/axis_demo/axis_demo.bit
+          else
+            echo "no hw/axis_demo/axis_demo.bit yet; skipping"
+          fi
+
       - name: Build user-space test
         run: make -C app
 
       - name: Collect board files
         run: |
           mkdir -p out/board
-          cp driver/mydma.ko app/dmatest app/dmatest_rw app/bwtest out/board/
+          cp driver/mydma.ko app/dmatest app/dmatest_rw app/bwtest app/axisdemo out/board/
           cp -r out/memory_thing out/multi_hp out/board/
+          [ -d out/axis_demo ] && cp -r out/axis_demo out/board/ || true
 
       - uses: actions/upload-artifact@v4
         with:

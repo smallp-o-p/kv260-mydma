@@ -20,6 +20,7 @@ modules.order
 /app/dmatest
 /app/dmatest_rw
 /app/bwtest
+/app/axisdemo
 
 # clangd
 compile_commands.json
