@@ -1,4 +1,4 @@
-# Matmul controller (version A): first LINEAR call on the board
+# Matmul controller: first LINEAR call on the board
 
 ```
 axi_dma_4 MM2S --s_act--> activation_buffer --rd_*/loaded/rel--> axi_controller --t_*--> tile
@@ -6,17 +6,29 @@ fifo_w0..3     --s_w0..3-------------------------------------> axi_controller <-
 axi_dma_4 S2MM <--m_res--------------------------------------  axi_controller
 ```
 
-One LINEAR call, decode shape (one token): `y = W x`. Version A has no level 2
-on chip, so the board returns one exact integer per (output n, K-group g):
-the raw 44-bit tile sum, sign-extended to 64 bits. The CPU does the fp32
-scaling (`fp8_golden.level2`). Design: "Matmul controller sketch" doc.
+One LINEAR call, decode shape (one token): `y = W x`. Design: "Matmul
+controller sketch" doc. One parameter picks the version:
+
+- **`LEVEL2 = 0`, version A (default, bring this up first).** No level 2 on
+  chip: the board returns one exact integer per (output n, K-group g), the
+  raw 44-bit tile sum sign-extended to 64 bits. The CPU does the fp32 scaling
+  (`fp8_golden.level2`).
+- **`LEVEL2 = 1`, version B.** `level2.v` does the scaling and the K-group
+  accumulation on chip, so the board returns `y` itself: one fp32 per output
+  n, ascending n, 4 per beat. Bit-exact with `fp8_golden.golden_linear_q`
+  (denormals flushed to zero, which never happens at these magnitudes). The
+  activation buffer then also holds `s_a[g]` (fp32, bytes 0-3) at word 8G+g,
+  so `beat_count` = 9G.
 
 | File | What it is |
 | --- | --- |
 | `axi_controller.v` | The controller: IDLE, LOADA, SCALE, RUN, WAIT, OUT, REL |
+| `level2.v` | Version B only: fp32 convert, scale, accumulate over g; output FIFO |
+| `fp32_funcs.vh` | The fp32 convert/multiply/add as functions (`include`d by `level2.v`) |
 | `tile_ref.v` | Reference tile with the same ports: row 0 only (decode), 16 DSPs. Use it to bring the chain up, then swap in the systolic tile |
 | `sim/tb_axi_controller.v` | Self-checking bench: buffer model, 4 lanes with random gaps, `tile_ref` with a late `t_done`, random S2MM back-pressure, 2 calls back to back |
-| `sim/gen_vectors.py` | Test vectors from `fp8_golden.py` (real quantized data) |
+| `sim/gen_vectors.py` | Test vectors from `fp8_golden.py` (real quantized data); add `B` for version B |
+| `sim/tb_fp32.v`, `sim/gen_fp_vectors.py` | Checks the fp32 functions alone against numpy |
 | `../../app/lineartest.cpp` | Board test: random FP8 W and x, packs the lanes, runs the call, checks every sum. Can also dump its data for the bench |
 
 ## The tile contract
@@ -44,13 +56,25 @@ iverilog -g2005 -I vec -o tb tb_axi_controller.v ../axi_controller.v ../tile_ref
 # PASS: 2 calls x 1024 sums (G = 8), all match level1_group_sums
 ```
 
+Version B (same bench, `params.vh` turns `LEVEL2` on):
+
+```bash
+python3 gen_vectors.py <path to fp8-flow> vecB 128 1024 1 B
+iverilog -g2005 -I vecB -I .. -o tb tb_axi_controller.v ../axi_controller.v ../tile_ref.v ../level2.v && vvp tb
+# PASS (version B): 2 calls x 128 outputs, all bit-exact with golden_linear_q
+
+# the fp32 functions alone: ~700k numpy vectors
+python3 gen_fp_vectors.py fpvec && iverilog -g2005 -I .. -o tbfp tb_fp32.v && vvp tbfp +dir=fpvec
+```
+
 Or simulate exactly what the board test sends: build `lineartest` natively
 (`g++ -O2 -std=c++17 -I../../../driver ../../../app/lineartest.cpp -o lt -pthread`),
-run `./lt 256 1024 1 vec`, then the same `iverilog` line. To test your own
+run `./lt 256 1024 1 A vec` (or `B vecB`), then the same `iverilog` line. To test your own
 tile, replace `../tile_ref.v` with it and change the instance in the bench.
 
-Passes in Icarus for (N, K) = (128, 256), (256, 128), (128, 1024), (128, 3072),
-and on `lineartest`'s own data (256, 1024).
+Both versions pass in Icarus for (N, K) = (128, 256), (256, 128), (128, 1024),
+(128, 3072), and on `lineartest`'s own data (A: 256x1024; B: 256x1024,
+128x3072, 512x256).
 
 ## Block design (multi_hp project, replacing lane_checker)
 
@@ -73,6 +97,17 @@ Save a copy of the project first: bwtest needs lane_checker.
    (`APP=multi_hp bash hw/package.sh <bit>`): the DMAs and addresses are
    unchanged, so the overlay is the same.
 
+### Switching to version B
+
+1. Add Sources: `level2.v` and `fp32_funcs.vh` (same folder; Vivado finds the
+   include next to the file, or set it as a Global Include).
+2. Double-click `axi_controller_0`, set `LEVEL2` to 1.
+3. Your activation buffer must accept 9G words (K <= 3072 means up to 216).
+4. Generate the bitstream. Timing at 250 MHz is unchecked: each fp32 step is
+   one function split in two halves. If a path fails, the add's half 2
+   (subtract, leading-zero count, round) is the likely one; split it again
+   and add a stage to the pipeline in `level2.v` (tags ride along).
+
 ## Run on the board
 
 ```bash
@@ -83,6 +118,9 @@ sudo ./lineartest                 # N = 1024, K = 1024
 sudo ./lineartest 4096 1024 5     # qkv shape, 5 calls back to back
 # call 0: 32768 of 32768 sums received, 0 wrong, weights streamed in ... us -> OK
 # PASS
+
+# version B bitstream
+sudo ./lineartest 4096 1024 5 B   # 4096 fp32 outputs per call, bit-exact
 ```
 
 If it hangs for 3 s and the DMA times out, check `err` on an ILA:

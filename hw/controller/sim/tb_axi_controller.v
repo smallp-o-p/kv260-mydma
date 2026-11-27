@@ -12,6 +12,12 @@
 //
 //   iverilog -g2005 -I <vecdir> -o tb tb_axi_controller.v ../axi_controller.v ../tile_ref.v && vvp tb
 `include "params.vh"
+`ifndef LEVEL2
+`define LEVEL2 0
+`endif
+`ifndef NOUT
+`define NOUT 0
+`endif
 
 module lane_src #(parameter FILE = "", parameter LEN = 1) (
     input  wire         clk, rstn, restart,
@@ -38,15 +44,15 @@ module lane_src #(parameter FILE = "", parameter LEN = 1) (
 endmodule
 
 module tb_axi_controller;
-    localparam G = `G, LEN = `LANE_BEATS, NSUMS = `NSUMS;
+    localparam G = `G, LEN = `LANE_BEATS, NSUMS = `NSUMS, LEVEL2 = `LEVEL2, NOUT = `NOUT;
     localparam TILE_LAT = 32, CALLS = 2;
-    localparam [11:0] BEATS = 8 * G;           // what the buffer reports as beat_count
+    localparam [11:0] BEATS = (LEVEL2 ? 9 : 8) * G;   // what the buffer reports as beat_count
 
     reg clk = 0, rstn = 0;
     always #2 clk = ~clk;                       // 250 MHz
 
     // ---------------- activation buffer model ----------------
-    reg  [127:0] act [0:8*G-1];
+    reg  [127:0] act [0:9*G-1];
     initial $readmemh({`VDIR, "/act.hex"}, act);
     reg          loaded = 0;
     wire         rd_en, rel;
@@ -57,7 +63,7 @@ module tb_axi_controller;
         v1 <= rd_en;  d1 <= act[rd_addr];
         v2 <= v1;     d2 <= d1;
         if (rel) loaded <= 0;
-        if (rd_en && rd_addr >= 8*G) begin $display("FAIL: read past the buffer, addr %0d", rd_addr); $finish; end
+        if (rd_en && rd_addr >= BEATS) begin $display("FAIL: read past the buffer, addr %0d", rd_addr); $finish; end
     end
 
     // ---------------- weight lanes ----------------
@@ -81,8 +87,13 @@ module tb_axi_controller;
         .t_a(t_a), .t_b(t_b), .t_done(t_done), .t_c(t_c));
 
     // ---------------- results ----------------
-    reg  [63:0] exp [0:NSUMS-1];
-    initial $readmemh({`VDIR, "/exp.hex"}, exp);
+    reg  [63:0] exp [0:NSUMS-1];          // version A: 64-bit sums
+    reg  [31:0] expf [0:NOUT];            // version B: fp32 outputs
+    initial if (LEVEL2) $readmemh({`VDIR, "/exp.hex"}, expf);
+    initial if (!LEVEL2) $readmemh({`VDIR, "/exp.hex"}, exp);
+    localparam NWORDS = LEVEL2 ? NOUT : NSUMS;    // values per call
+    localparam PER_BEAT = LEVEL2 ? 4 : 2;
+    integer j;
     wire [127:0] m_tdata;
     wire [15:0]  m_tkeep;
     wire m_tvalid, m_tlast, err;
@@ -91,20 +102,29 @@ module tb_axi_controller;
 
     integer got_sums = 0, bad = 0, calls_done = 0, lasts = 0;
     always @(posedge clk) if (m_tvalid && m_tready) begin
-        if (m_tdata[63:0]   !== exp[got_sums] || m_tdata[127:64] !== exp[got_sums + 1]) begin
-            if (bad < 5) $display("sum %0d: got %h %h, expected %h %h", got_sums,
-                                  m_tdata[63:0], m_tdata[127:64], exp[got_sums], exp[got_sums + 1]);
-            bad = bad + 1;
+        if (!LEVEL2) begin
+            if (m_tdata[63:0]   !== exp[got_sums] || m_tdata[127:64] !== exp[got_sums + 1]) begin
+                if (bad < 5) $display("sum %0d: got %h %h, expected %h %h", got_sums,
+                                      m_tdata[63:0], m_tdata[127:64], exp[got_sums], exp[got_sums + 1]);
+                bad = bad + 1;
+            end
+        end else begin
+            for (j = 0; j < 4; j = j + 1)
+                if (m_tdata[32*j +: 32] !== expf[got_sums + j]) begin
+                    if (bad < 5) $display("y[%0d]: got %h, expected %h", got_sums + j,
+                                          m_tdata[32*j +: 32], expf[got_sums + j]);
+                    bad = bad + 1;
+                end
         end
-        if (m_tlast !== (got_sums + 2 == NSUMS)) begin
-            $display("FAIL: TLAST %b at sums %0d of %0d", m_tlast, got_sums + 2, NSUMS); bad = bad + 1;
+        if (m_tlast !== (got_sums + PER_BEAT == NWORDS)) begin
+            $display("FAIL: TLAST %b at %0d of %0d", m_tlast, got_sums + PER_BEAT, NWORDS); bad = bad + 1;
         end
-        got_sums = got_sums + 2;
+        got_sums = got_sums + PER_BEAT;
         if (m_tlast) lasts = lasts + 1;
     end
 
     // ---------------- DUT ----------------
-    axi_controller dut (
+    axi_controller #(.LEVEL2(LEVEL2)) dut (
         .aclk(clk), .aresetn(rstn),
         .loaded(loaded), .beat_count(BEATS), .rd_data(d2), .rd_valid(v2),
         .rd_en(rd_en), .rd_addr(rd_addr), .rel(rel),
@@ -127,22 +147,23 @@ module tb_axi_controller;
             @(posedge clk); loaded <= 1;           // the buffer has a load
             t0 = $time;
             @(posedge clk);
-            while (loaded) begin                   // until the controller pulses rel
+            while (loaded || got_sums < NWORDS) begin   // until rel and all results are out
                 @(posedge clk);
                 if ($time - t0 > 4 * 1000000) begin $display("FAIL: timeout in call %0d (%0d sums)", k, got_sums); $finish; end
             end
             cyc = ($time - t0) / 4;
             $display("call %0d: %0d sums, %0d tile steps, %0d clocks, %0d lane beats each",
                      k, got_sums, steps, cyc, LEN);
-            if (got_sums != NSUMS) begin $display("FAIL: expected %0d sums", NSUMS); bad = bad + 1; end
+            if (got_sums != NWORDS) begin $display("FAIL: expected %0d values", NWORDS); bad = bad + 1; end
             steps = 0;
             restart <= 1; @(posedge clk); restart <= 0;   // DMAs re-armed for the next call
             repeat (20) @(posedge clk);
         end
         if (err) begin $display("FAIL: err raised"); bad = bad + 1; end
         if (lasts != CALLS) begin $display("FAIL: %0d TLASTs for %0d calls", lasts, CALLS); bad = bad + 1; end
-        if (bad == 0) $display("PASS: %0d calls x %0d sums (G = %0d), all match level1_group_sums", CALLS, NSUMS, G);
-        else          $display("FAIL: %0d errors", bad);
+        if (bad != 0)    $display("FAIL: %0d errors", bad);
+        else if (LEVEL2) $display("PASS (version B): %0d calls x %0d fp32 outputs (G = %0d), bit-exact with golden_linear_q", CALLS, NOUT, G);
+        else             $display("PASS: %0d calls x %0d sums (G = %0d), all match level1_group_sums", CALLS, NSUMS, G);
         $finish;
     end
 endmodule

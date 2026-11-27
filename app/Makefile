@@ -31,7 +31,7 @@ axisdemo: axisdemo.cpp ../driver/mydma_uapi.h
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
 
 lineartest: lineartest.cpp ../driver/mydma_uapi.h
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -ffp-contract=off $< -o $@ $(LDFLAGS)
 
 dmatest_rw: dmatest_rw.cpp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
