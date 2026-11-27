@@ -18,6 +18,7 @@ modules.order
 
 # User-space binaries
 /app/dmatest
+/app/lineartest
 /app/dmatest_rw
 /app/bwtest
 
