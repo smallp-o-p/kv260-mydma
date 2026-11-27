@@ -225,13 +225,13 @@ module axi_controller #(
             // shows loaded = 1 (it clears on rel), so don't restart on it.
             IDLE: if (loaded && !rel) begin
                 if (LEVEL2 == 0) begin
-                    if (beat_count[2:0] != 3'd0 || beat_count == 0)
-                        err <= 1'b1;         // not 8G words: bad DMA length
+                    if (beat_count[2:0] != 3'd0 || beat_count == 0 || beat_count > 8 * 24)
+                        err <= 1'b1;         // not 8G words with G <= 24: bad DMA length
                     G <= beat_count[7:3];    // G = beat_count / 8
                 end else begin
-                    if (G9 * 9 != beat_count || beat_count == 0)
-                        err <= 1'b1;         // not 9G words: bad DMA length
-                    G <= G9[4:0];            // G = beat_count / 9 (<= 24, checked above)
+                    if (G9 * 9 != beat_count || beat_count == 0 || beat_count > 9 * 24)
+                        err <= 1'b1;         // not 9G words with G <= 24: bad DMA length
+                    G <= G9[4:0];            // G = beat_count / 9
                 end
                 g     <= 5'd0;
                 p     <= 2'd0;
