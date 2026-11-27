@@ -15,13 +15,20 @@
 //   * For every granule the tile gets 128 steps, then its 16 row-0 sums go
 //     to level 2, which sends the N fp32 results (4 per beat, ascending n)
 //   * The call ends after lane 3's granule whose last row carries TLAST.
+//   * The tile has no start/end markers and no done signal: t_clear zeroes
+//     its sums before a granule's 128 steps, and after the last step the
+//     controller waits TILE_LAT clocks, then reads t_c.
 //
 // See the "Matmul controller sketch" doc for the full design.
 
 module axi_controller #(
     parameter AXI_STREAM_DATA_BITS = 128,
     parameter ADDR_WIDTH = 12,
-    parameter N = 16                       // tile width (outputs per granule); only 16 works
+    parameter N = 16,                      // tile width (outputs per granule); only 16 works
+    // Tile latency: t_c holds the final sums TILE_LAT clocks after the clock
+    // edge that takes a granule's last step (t_valid = 1, k = 127).
+    // tile_ref: 2. Too small reads unfinished sums; too big only costs clocks.
+    parameter TILE_LAT = 2
 )(
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 aclk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF s_w0:s_w1:s_w2:s_w3:m_res, ASSOCIATED_RESET aresetn" *)
@@ -40,10 +47,9 @@ module axi_controller #(
     output reg                             rel,
 
     // ---- tile (plain wires, no AXI) ----
-    output wire                            t_valid, t_first, t_last,
+    output wire                            t_valid, t_clear,
     output wire [AXI_STREAM_DATA_BITS-1:0] t_a,      // 16 x 8-bit, row i in byte i
     output wire [AXI_STREAM_DATA_BITS-1:0] t_b,      // 16 x 8-bit, column c in byte c
-    input  wire                            t_done,
     input  wire [N*44-1:0]                 t_c,      // row 0's sums (decode only)
 
     // ---- sticky error: bad beat_count or misplaced TLAST (ILA / LED).
@@ -92,7 +98,7 @@ module axi_controller #(
                      LOADA = 3'd1,   // copy group g's 8 code words into A_REG, then s_a[g]
                      SCALE = 3'd2,   // pop lane p's scale beat
                      RUN   = 3'd3,   // 128 steps: pop a row, feed the tile
-                     WAIT  = 3'd4,   // wait for the tile's t_done
+                     WAIT  = 3'd4,   // wait TILE_LAT clocks for the tile to finish
                      HAND  = 3'd5,   // hand the 16 sums to level 2
                      NEXT  = 3'd6,   // loop bookkeeping: next lane / group / quad / done
                      REL   = 3'd7;   // hand the buffer back
@@ -115,6 +121,7 @@ module axi_controller #(
     reg [1:0]  p;
     reg [6:0]  kk;
     reg        saw_tlast;    // TLAST was on the last row of the granule just run
+    reg [7:0]  wcnt;         // WAIT countdown (TILE_LAT <= 255)
 
     // ------------------------------------------------------------------
     // LOADA: read words 8g .. 8g+7 into A_REG, then word 8G+g, the
@@ -160,8 +167,10 @@ module axi_controller #(
     // and nothing moves (the tile must carry valid along with the data).
     // ------------------------------------------------------------------
     assign t_valid = (current_state == RUN) && pop;
-    assign t_first = (kk == 7'd0);
-    assign t_last  = (kk == 7'd127);
+    // t_clear: one-clock pulse that zeroes the tile's sums. It comes with the
+    // granule's scale beat (SCALE), i.e. before its first step and after
+    // HAND has copied the previous sums, so the tile is always idle then.
+    assign t_clear = (current_state == SCALE) && pop;
     assign t_b     = lane_data;                              // row kk: W[n0+c][k] in byte c
     assign t_a     = {{(W-8){1'b0}}, A_REG[8*kk +: 8]};      // decode: only row 0 = x[k]
 
@@ -199,6 +208,7 @@ module axi_controller #(
             s_a        <= 32'd0;
             issued_all <= 1'b0;
             saw_tlast  <= 1'b0;
+            wcnt       <= 8'd0;
             s_w        <= 32'd0;
         end else begin
             rel <= 1'b0;                     // default low: REL makes a 1-clock pulse
@@ -250,14 +260,19 @@ module axi_controller #(
                 kk <= kk + 1'b1;
                 if (kk == 7'd127) begin
                     saw_tlast     <= lane_last;
+                    wcnt          <= TILE_LAT;
                     current_state <= WAIT;
                 end else if (lane_last) begin
                     err <= 1'b1;                     // TLAST in the middle of a granule
                 end
             end
 
-            // The far corner of the tile finishes ~2N + pipeline clocks after t_last.
-            WAIT: if (t_done) current_state <= HAND;
+            // Count down the tile's latency. The last step was taken on edge T;
+            // this leaves WAIT on edge T + TILE_LAT (at least T + 1), so level 2
+            // copies t_c on edge T + TILE_LAT + 1 at the earliest: the first
+            // edge after the sums are final.
+            WAIT: if (wcnt <= 8'd1) current_state <= HAND;
+                  else              wcnt <= wcnt - 1'b1;
 
             // Wait until level 2 takes the granule (it copies the sums).
             HAND: if (l2_ready) current_state <= NEXT;

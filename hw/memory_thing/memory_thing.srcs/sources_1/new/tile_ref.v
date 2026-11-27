@@ -10,30 +10,33 @@
 //   * t_a: byte i = A value for row i (decode: only byte 0 is real).
 //     t_b: byte c = B value for column c (W[n0 + c][k]).
 //     Both are E4M3 codes.
-//   * t_first marks k = 0 of a K-group: start the sums from this product
-//     (no separate clear). t_last marks k = 127.
+//   * t_clear (one clock) zeroes every sum. The controller sends it before a
+//     group's first step, only while the tile is idle (no steps in flight,
+//     t_c already read), so it needs no pipelining: apply it straight to the
+//     accumulators (DSP48E2: RSTP). There are no start/end markers.
 //   * Each product is exact: decode both codes to integers in units of 2^-9
 //     (so the product is in units of 2^-18) and add into 44-bit signed sums.
 //     That is fp8_golden.py's level 1, bit for bit.
-//   * Pulse t_done once the step marked t_last has been added everywhere.
-//     Then HOLD t_c until the next t_first. The controller reads it after
-//     t_done and won't send the next group before it has.
+//   * The tile's latency is fixed and known: t_c holds the final sums
+//     LAT clocks after the clock edge that takes a group's last step.
+//     Set the controller's TILE_LAT to it. HOLD t_c until t_clear; the
+//     controller reads it before it clears.
 //   * t_c: column c's sum (row 0) in bits [44c +: 44].
 //
-// Pipeline: decode (1) -> multiply (1) -> accumulate (1). 16 multipliers of
-// 19 x 19 bits, so 16 DSPs. EXTRA_DONE_DELAY only makes t_done later (to
-// imitate a bigger tile in simulation).
+// Pipeline: decode (1) -> multiply (1) -> accumulate (1), so LAT = 2 (the
+// last step is registered on edge T, its sum lands on edge T + 2). 16
+// multipliers of 19 x 19 bits, so 16 DSPs. EXTRA_LAT delays t_c by that many
+// more clocks (LAT = 2 + EXTRA_LAT), to imitate a bigger tile in simulation.
 
 module tile_ref #(
     parameter N = 16,
-    parameter EXTRA_DONE_DELAY = 0
+    parameter EXTRA_LAT = 0
 )(
     input  wire              aclk,
     input  wire              aresetn,
-    input  wire              t_valid, t_first, t_last,
+    input  wire              t_valid, t_clear,
     input  wire [8*N-1:0]    t_a,
     input  wire [8*N-1:0]    t_b,
-    output wire              t_done,
     output wire [N*44-1:0]   t_c
 );
     // E4M3 code -> value * 2^9 as a signed integer (fp8_golden E4M3_TO_INT9).
@@ -50,48 +53,50 @@ module tile_ref #(
     endfunction
 
     // ---- stage 1: decode ----
-    reg               v1, f1, l1;
+    reg               v1;
     reg signed [18:0] a1;
     reg signed [18:0] b1 [0:N-1];
     // ---- stage 2: multiply ----
-    reg               v2, f2, l2;
+    reg               v2;
     reg signed [36:0] p2 [0:N-1];
     // ---- stage 3: accumulate ----
     reg signed [43:0] acc [0:N-1];
-    reg               done3;
 
     integer c;
     always @(posedge aclk) begin
         if (!aresetn) begin
-            v1 <= 0; v2 <= 0; done3 <= 0;
+            v1 <= 0; v2 <= 0;
         end else begin
-            v1 <= t_valid; f1 <= t_first; l1 <= t_last;
+            v1 <= t_valid;
             a1 <= dec(t_a[7:0]);
             for (c = 0; c < N; c = c + 1) b1[c] <= dec(t_b[8*c +: 8]);
 
-            v2 <= v1; f2 <= f1; l2 <= l1;
+            v2 <= v1;
             for (c = 0; c < N; c = c + 1) p2[c] <= a1 * b1[c];
 
-            done3 <= v2 && l2;
-            if (v2)
-                for (c = 0; c < N; c = c + 1)
-                    acc[c] <= (f2 ? 44'sd0 : acc[c]) + p2[c];
+            if (t_clear)
+                for (c = 0; c < N; c = c + 1) acc[c] <= 44'sd0;
+            else if (v2)
+                for (c = 0; c < N; c = c + 1) acc[c] <= acc[c] + p2[c];
         end
     end
 
+    wire [N*44-1:0] acc_flat;
     genvar gc;
     generate for (gc = 0; gc < N; gc = gc + 1) begin : C
-        assign t_c[gc*44 +: 44] = acc[gc];
+        assign acc_flat[gc*44 +: 44] = acc[gc];
     end endgenerate
 
-    // optional extra latency on t_done only
-    generate if (EXTRA_DONE_DELAY == 0) begin : NO_DLY
-        assign t_done = done3;
+    // optional extra latency on t_c (simulation only)
+    generate if (EXTRA_LAT == 0) begin : NO_DLY
+        assign t_c = acc_flat;
     end else begin : DLY
-        reg [EXTRA_DONE_DELAY-1:0] sh;
-        always @(posedge aclk)
-            if (!aresetn) sh <= 0;
-            else          sh <= {sh, done3};      // MSB falls off
-        assign t_done = sh[EXTRA_DONE_DELAY-1];
+        reg [N*44-1:0] sh [0:EXTRA_LAT-1];
+        integer i;
+        always @(posedge aclk) begin
+            sh[0] <= acc_flat;
+            for (i = 1; i < EXTRA_LAT; i = i + 1) sh[i] <= sh[i-1];
+        end
+        assign t_c = sh[EXTRA_LAT-1];
     end endgenerate
 endmodule
