@@ -42,3 +42,7 @@ vivado_pid*.zip
 *.backup.jou
 *.backup.log
 webtalk*
+
+# Editor/backup copies and stray board-folder copies
+*.bak
+hw/memory_thing/DDR_Access/
