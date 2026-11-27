@@ -1,0 +1,116 @@
+# Matmul controller: first LINEAR call on the board
+
+```
+axi_dma_4 MM2S --s_act--> activation_buffer --rd_*/loaded/rel--> axi_controller --t_*--> tile
+fifo_w0..3     --s_w0..3-------------------------------------> axi_controller <--t_c--
+axi_dma_4 S2MM <--m_res------------------ level2 <------------ axi_controller
+```
+
+One LINEAR call, decode shape (one token): `y = W x`, returned as fp32.
+Design: "Matmul controller sketch" doc.
+
+- The activation buffer holds the 8G code words (16 codes each, G = K/128),
+  then `s_a[g]` (fp32, bytes 0-3) at word 8G+g. So `beat_count` = 9G, and
+  the controller gets G from it (no header). K <= 3072, so G <= 24.
+- For every granule (one lane's scale beat + 128 rows) the tile does 128 steps,
+  then `level2.v` takes its 16 sums and does fp8_golden's level 2:
+  `p = fp32(sum) * 2^-18`, `t = p * fp32(s_a[g] * s_w)`, `acc += t`.
+- After the last group, `level2.v` sends y on `m_res`: one fp32 per output n,
+  ascending n, 4 per beat, TLAST on the call's last beat. Bit-exact with
+  `fp8_golden.golden_linear_q` (denormals flush to zero, which never happens
+  at these magnitudes).
+
+| File | What it is |
+| --- | --- |
+| `axi_controller.v` | The controller: IDLE, LOADA, SCALE, RUN, WAIT, HAND, NEXT, REL |
+| `level2.v` | fp32 convert, scale, accumulate over g; output FIFO |
+| `fp32_funcs.vh` | The fp32 convert/multiply/add as functions (`include`d by `level2.v`) |
+| `tile_ref.v` | Reference tile with the same ports: row 0 only (decode), 16 DSPs. Use it to bring the chain up, then swap in the systolic tile |
+| `sim/tb_axi_controller.v` | Self-checking bench: buffer model, 4 lanes with random gaps, `tile_ref` with a late `t_done`, random S2MM back-pressure, 2 calls back to back |
+| `sim/gen_vectors.py` | Test vectors from `fp8_golden.py` (real quantized data) |
+| `sim/tb_fp32.v`, `sim/gen_fp_vectors.py` | Checks the fp32 functions alone against numpy |
+| `../../app/lineartest.cpp` | Board test: random FP8 W and x, packs the lanes, runs the call, checks every output. Can also dump its data for the bench |
+
+## The tile contract
+
+Your tile can replace `tile_ref` if it does this (all in `tile_ref.v`'s header too):
+
+- A step happens on a clock with `t_valid = 1`. Lanes stall, so `t_valid`
+  can drop at any time: carry valid along with the data.
+- `t_a` byte i = row i's A value (decode: only byte 0 is real, the rest are 0).
+  `t_b` byte c = column c's B value. Both are E4M3 codes.
+- `t_first` = k is 0 of a K-group: start each sum from this product.
+  `t_last` = k is 127.
+- Products are exact integers: decode each code to value x 2^9
+  (`(8+m) << (e-1)`, or `m` when e = 0, NaN codes give 0), multiply, add into
+  44-bit signed sums.
+- Pulse `t_done` once the `t_last` step is in every sum, then **hold** `t_c`
+  until the next `t_first`. `t_c[44c +: 44]` = row 0, column c. In an
+  output-stationary array that is just row 0's accumulators wired out, and
+  `t_done` is the `last` flag coming out of PE (0,15).
+
+## Simulate
+
+```bash
+cd hw/controller/sim
+python3 gen_vectors.py <path to fp8-flow> vec 128 1024      # N K
+iverilog -g2005 -I vec -I .. -o tb tb_axi_controller.v ../axi_controller.v ../tile_ref.v ../level2.v && vvp tb
+# PASS: 2 calls x 128 fp32 outputs (G = 8), bit-exact with golden_linear_q
+
+# the fp32 functions alone: ~700k numpy vectors
+python3 gen_fp_vectors.py fpvec && iverilog -g2005 -I .. -o tbfp tb_fp32.v && vvp tbfp +dir=fpvec
+```
+
+Or simulate exactly what the board test sends: build `lineartest` natively
+(`g++ -O2 -std=c++17 -ffp-contract=off -I../../../driver ../../../app/lineartest.cpp -o lt -pthread`),
+run `./lt 256 1024 1 vec`, then the same `iverilog` line. To test your own
+tile, replace `../tile_ref.v` with it and change the instance in the bench.
+
+Passes in Icarus for (N, K) = (128, 256), (256, 128), (128, 1024), (128, 3072),
+(512, 256), and on `lineartest`'s own data (256x1024, 128x3072). With K = 3200
+(G = 25) the controller raises `err` and sends nothing, as it should.
+
+## Block design (multi_hp project, replacing lane_checker)
+
+Save a copy of the project first: bwtest needs lane_checker.
+
+1. Add Sources: `axi_controller.v`, `level2.v`, `fp32_funcs.vh` (same
+   folder; Vivado finds the include next to the file, or mark it Global
+   Include), `tile_ref.v` (or your tile), your `activation_buffer.v`.
+   Right-click the canvas > Add Module for the controller, the tile and the
+   buffer (`level2` sits inside the controller).
+2. Delete `lane_checker_1`.
+3. `fifo_w0..3/M_AXIS` -> `axi_controller_0/s_w0..3` (one drag each).
+4. `axi_dma_4/M_AXIS_MM2S` -> `activation_buffer_0/s_act`.
+5. `axi_controller_0/m_res` -> `axi_dma_4/S_AXIS_S2MM`.
+6. Buffer to controller, pin to pin: `loaded`, `beat_count`, `rel`, `rd_en`,
+   `rd_addr`, `rd_data`, `rd_valid`. (`beat_count` must be the number of
+   words received, 9G; for K = 3072 that is 216.)
+7. Controller to tile, pin to pin: `t_valid`, `t_first`, `t_last`, `t_a`,
+   `t_b`, `t_done`, `t_c`.
+8. Every `aclk` to `pl_clk0`, every `aresetn` to `proc_sys_reset_0/peripheral_aresetn`.
+   Leave `err` open, or put it on a System ILA.
+9. Validate, generate the bitstream, package it as before
+   (`APP=multi_hp bash hw/package.sh <bit>`): the DMAs and addresses are
+   unchanged, so the overlay is the same.
+
+Timing at 250 MHz is unchecked: each fp32 step is one function split in two
+halves. If a path fails, the add's half 2 (subtract, leading-zero count,
+round) is the likely one; split it again and add a stage to the pipeline in
+`level2.v` (the tags ride along).
+
+## Run on the board
+
+```bash
+make -C app lineartest
+# on the board, after loading the app
+sudo insmod ~/mydma.ko max_xfer=1048576
+sudo ./lineartest                 # N = 1024, K = 1024
+sudo ./lineartest 4096 1024 5     # qkv shape, 5 calls back to back
+# call 0: 4096 of 4096 outputs received, 0 wrong, weights streamed in ... us -> OK
+# PASS
+```
+
+If it hangs for 3 s and the DMA times out, check `err` on an ILA. It latches
+on a `beat_count` that isn't 9G with 1 <= G <= 24 (the call is then skipped),
+or on a TLAST in the wrong place (wrong lane length).

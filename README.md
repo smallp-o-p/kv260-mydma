@@ -38,6 +38,7 @@ tree and turns `write()` into an MM2S transfer and `read()` into an S2MM one.
 | `app/dmatest_rw.cpp` | Older C++ test using `read()`/`write()` on two threads |
 | `hw/multi_hp.dts` | Overlay for the four-weight-engine design |
 | `hw/lane_checker.v` | Stand-in for the array: 5 streams in, one result per transfer out |
+| `hw/axis_demo/` | Teaching template: one block with an AXIS in and an AXIS out, a testbench, a Tcl-built design and `app/axisdemo.cpp` ([walkthrough](hw/axis_demo/README.md)) |
 
 ## Target
 
