@@ -1,21 +1,19 @@
 `timescale 1ns / 1ps
-// axi_controller.v - matmul controller for one tile.
-//   LEVEL2 = 0 (version A): raw 44-bit sums out, the CPU does level 2.
-//   LEVEL2 = 1 (version B): level2.v on chip, fp32 results out.
+// axi_controller.v - matmul controller for one tile, level 2 on chip:
+// the board returns y = W x as fp32 (level2.v), bit-exact with fp8_golden.
 //
 //   activation_buffer --rd_*--> [ controller ] --t_*--> 16x16 tile
 //   weight lanes s_w0..3 -----> [            ] <--t_c-- (row 0 sums)
 //                               [            ] --m_res--> axi_dma_4 S2MM
 //
 // Per LINEAR call:
-//   * The buffer holds x as 8G words (16 codes per word, G = K/128). In
-//     version B, G more words follow: s_a[g] (fp32, bytes 0-3) at word 8G + g.
-//     G comes from beat_count, so there is no header.
+//   * The buffer holds x as 8G words (16 codes per word, G = K/128), then
+//     G more words: s_a[g] (fp32, bytes 0-3) at word 8G + g. So
+//     beat_count = 9G, and G comes from it: there is no header.
 //   * Weights arrive as granules: 1 scale beat + 128 rows (one k each).
 //     Order: for quad, for g, for lane p = 0..3 (see fp8_golden.py).
 //   * For every granule the tile gets 128 steps, then its 16 row-0 sums go
-//     version A: out on m_res as 8 beats (two sign-extended 64-bit sums per beat)
-//     version B: to level 2, which sends N fp32 results (4 per beat) at the end
+//     to level 2, which sends the N fp32 results (4 per beat, ascending n)
 //   * The call ends after lane 3's granule whose last row carries TLAST.
 //
 // See the "Matmul controller sketch" doc for the full design.
@@ -23,8 +21,7 @@
 module axi_controller #(
     parameter AXI_STREAM_DATA_BITS = 128,
     parameter ADDR_WIDTH = 12,
-    parameter N = 16,                      // tile width (outputs per granule)
-    parameter LEVEL2 = 0                   // 0: version A (raw sums), 1: version B (fp32)
+    parameter N = 16                       // tile width (outputs per granule); only 16 works
 )(
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 aclk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF s_w0:s_w1:s_w2:s_w3:m_res, ASSOCIATED_RESET aresetn" *)
@@ -49,7 +46,9 @@ module axi_controller #(
     input  wire                            t_done,
     input  wire [N*44-1:0]                 t_c,      // row 0's sums (decode only)
 
-    // ---- sticky error: bad beat_count or misplaced TLAST (ILA / LED) ----
+    // ---- sticky error: bad beat_count or misplaced TLAST (ILA / LED).
+    //      A bad beat_count releases the buffer without running the call,
+    //      so the DMAs time out instead of returning wrong numbers. ----
     output reg                             err,
 
     // ---- weight lane 0 ----
@@ -89,16 +88,15 @@ module axi_controller #(
     // ------------------------------------------------------------------
     // States. Each one does one job and says where to go next.
     // ------------------------------------------------------------------
-    localparam [3:0] IDLE  = 4'd0,   // wait for the buffer to be loaded
-                     LOADA = 4'd1,   // copy group g's 8 words into A_REG (+ s_a[g] in B)
-                     SCALE = 4'd2,   // pop lane p's scale beat
-                     RUN   = 4'd3,   // 128 steps: pop a row, feed the tile
-                     WAIT  = 4'd4,   // wait for the tile's t_done
-                     OUT   = 4'd5,   // version A: send 16 sums as 8 beats on m_res
-                     HAND  = 4'd6,   // version B: hand the 16 sums to level 2
-                     NEXT  = 4'd7,   // loop bookkeeping: next lane / group / quad / done
-                     REL   = 4'd8;   // hand the buffer back
-    reg [3:0] current_state;
+    localparam [2:0] IDLE  = 3'd0,   // wait for the buffer to be loaded
+                     LOADA = 3'd1,   // copy group g's 8 code words into A_REG, then s_a[g]
+                     SCALE = 3'd2,   // pop lane p's scale beat
+                     RUN   = 3'd3,   // 128 steps: pop a row, feed the tile
+                     WAIT  = 3'd4,   // wait for the tile's t_done
+                     HAND  = 3'd5,   // hand the 16 sums to level 2
+                     NEXT  = 3'd6,   // loop bookkeeping: next lane / group / quad / done
+                     REL   = 3'd7;   // hand the buffer back
+    reg [2:0] current_state;
 
     // ------------------------------------------------------------------
     // Loop counters (a hardware loop = a register + a state)
@@ -107,27 +105,28 @@ module axi_controller #(
     //       for kk in 0..127:   one row/step per popped beat
     //   ...repeated per quad until lane 3's TLAST.
     // ------------------------------------------------------------------
-    reg [4:0]  G;            // number of K-groups, from beat_count (K <= 3072 -> G <= 24)
+    localparam MAX_G = 24;   // K <= 3072
+    reg [4:0]  G;            // number of K-groups, beat_count / 9
     // beat_count / 9 without a divider: x * 57 >> 9 is exact for multiples of 9 below 4608
     wire [ADDR_WIDTH+5:0] bc57 = beat_count * 57;
     wire [ADDR_WIDTH-4:0] G9   = bc57[ADDR_WIDTH+5:9];
+    wire       bad_len = (beat_count == 0) || (G9 > MAX_G) || (G9 * 9 != beat_count);
     reg [4:0]  g;
     reg [1:0]  p;
     reg [6:0]  kk;
-    reg [2:0]  b;            // output beat 0..7 in OUT
     reg        saw_tlast;    // TLAST was on the last row of the granule just run
 
     // ------------------------------------------------------------------
-    // LOADA: read words 8g .. 8g+7 into A_REG (version B: then word 8G+g,
-    // the activation scale s_a[g]).
+    // LOADA: read words 8g .. 8g+7 into A_REG, then word 8G+g, the
+    // activation scale s_a[g].
     //   issue counts requests, got counts arrivals (2 clocks later).
     //   We leave on the last ARRIVAL, so any read latency works.
     // ------------------------------------------------------------------
-    localparam [3:0] LAST_WORD = LEVEL2 ? 4'd8 : 4'd7;     // 9 or 8 words per group
+    localparam [3:0] LAST_WORD = 4'd8;                     // 9 words per group
     reg [3:0]     issue, got;
     reg           issued_all;
     reg [8*W-1:0] A_REG;     // the 128 codes of group g, code kk in A_REG[8*kk +: 8]
-    reg [31:0]    s_a;       // activation scale of group g (version B)
+    reg [31:0]    s_a;       // activation scale of group g
 
     assign rd_en   = (current_state == LOADA) && !issued_all;
     assign rd_addr = issue[3] ? ({G, 3'b000} + g)                      // 8G + g: s_a[g]
@@ -154,7 +153,7 @@ module axi_controller #(
 
     wire pop = want_data && lane_valid;     // the handshake on lane p this clock
 
-    reg [31:0] s_w;          // weight scale of this granule (used by level 2 in version B)
+    reg [31:0] s_w;          // weight scale of this granule
 
     // ------------------------------------------------------------------
     // Tile: one k step per popped row. If the lane stalls, t_valid is 0
@@ -167,36 +166,21 @@ module axi_controller #(
     assign t_a     = {{(W-8){1'b0}}, A_REG[8*kk +: 8]};      // decode: only row 0 = x[k]
 
     // ------------------------------------------------------------------
-    // Output: the tile holds its sums until the next granule starts, and
-    // we don't start one until OUT is finished, so read t_c directly.
-    // Beat b carries sums 2b and 2b+1, each sign-extended to 64 bits.
+    // Level 2 copies the 16 sums when it accepts the granule (HAND), so the
+    // tile is free for the next granule straight away. It sends the fp32
+    // results itself, TLAST on the call's last beat.
     // ------------------------------------------------------------------
-    wire [43:0] lo = t_c[(2*b)  *44 +: 44];
-    wire [43:0] hi = t_c[(2*b+1)*44 +: 44];
-
     wire last_granule = (p == 2'd3) && (g == G - 1'b1) && saw_tlast;
+    wire l2_ready;
     assign m_res_tkeep = {(W/8){1'b1}};
-    wire   out_beat;                     // version A: a sum beat moved on m_res
-    wire   l2_ready;                     // version B: level 2 takes a granule
 
-    generate if (LEVEL2 == 0) begin : VER_A
-        assign m_res_tdata  = {{20{hi[43]}}, hi, {20{lo[43]}}, lo};
-        assign m_res_tvalid = (current_state == OUT);
-        assign m_res_tlast  = (current_state == OUT) && (b == 3'd7) && last_granule;
-        assign out_beat     = m_res_tvalid && m_res_tready;
-        assign l2_ready     = 1'b0;
-    end else begin : VER_B
-        // Level 2 copies the 16 sums when it accepts the granule, so the
-        // tile is free for the next granule straight away.
-        level2 l2 (
-            .aclk(aclk), .aresetn(aresetn),
-            .in_valid(current_state == HAND), .in_ready(l2_ready),
-            .in_sums(t_c), .in_sa(s_a), .in_sw(s_w), .in_bank(p),
-            .in_first_g(g == 5'd0), .in_last_g(g == G - 1'b1), .in_last_call(last_granule),
-            .m_tdata(m_res_tdata), .m_tvalid(m_res_tvalid), .m_tlast(m_res_tlast),
-            .m_tready(m_res_tready));
-        assign out_beat = 1'b0;
-    end endgenerate
+    level2 l2 (
+        .aclk(aclk), .aresetn(aresetn),
+        .in_valid(current_state == HAND), .in_ready(l2_ready),
+        .in_sums(t_c), .in_sa(s_a), .in_sw(s_w), .in_bank(p),
+        .in_first_g(g == 5'd0), .in_last_g(g == G - 1'b1), .in_last_call(last_granule),
+        .m_tdata(m_res_tdata), .m_tvalid(m_res_tvalid), .m_tlast(m_res_tlast),
+        .m_tready(m_res_tready));
 
     // ------------------------------------------------------------------
     // The state machine: everything registered lives here.
@@ -210,7 +194,6 @@ module axi_controller #(
             g          <= 5'd0;
             p          <= 2'd0;
             kk         <= 7'd0;
-            b          <= 3'd0;
             issue      <= 4'd0;
             got        <= 4'd0;
             s_a        <= 32'd0;
@@ -224,18 +207,14 @@ module axi_controller #(
             // Wait for a load. !rel: in the clock after REL the buffer still
             // shows loaded = 1 (it clears on rel), so don't restart on it.
             IDLE: if (loaded && !rel) begin
-                if (LEVEL2 == 0) begin
-                    if (beat_count[2:0] != 3'd0 || beat_count == 0 || beat_count > 8 * 24)
-                        err <= 1'b1;         // not 8G words with G <= 24: bad DMA length
-                    G <= beat_count[7:3];    // G = beat_count / 8
-                end else begin
-                    if (G9 * 9 != beat_count || beat_count == 0 || beat_count > 9 * 24)
-                        err <= 1'b1;         // not 9G words with G <= 24: bad DMA length
-                    G <= G9[4:0];            // G = beat_count / 9
-                end
-                g     <= 5'd0;
-                p     <= 2'd0;
-                current_state <= LOADA;
+                G <= G9[4:0];
+                g <= 5'd0;
+                p <= 2'd0;
+                if (bad_len) begin           // not 9G words with 1 <= G <= 24
+                    err <= 1'b1;
+                    current_state <= REL;
+                end else
+                    current_state <= LOADA;
             end
 
             // Requests and arrivals overlap: 10 clocks for 8 words.
@@ -278,18 +257,9 @@ module axi_controller #(
             end
 
             // The far corner of the tile finishes ~2N + pipeline clocks after t_last.
-            WAIT: if (t_done) begin
-                b <= 3'd0;
-                current_state <= (LEVEL2 != 0) ? HAND : OUT;
-            end
+            WAIT: if (t_done) current_state <= HAND;
 
-            // Version A: 8 beats out, two sums each.
-            OUT: if (out_beat) begin
-                b <= b + 1'b1;
-                if (b == 3'd7) current_state <= NEXT;
-            end
-
-            // Version B: wait until level 2 takes the granule (it copies the sums).
+            // Wait until level 2 takes the granule (it copies the sums).
             HAND: if (l2_ready) current_state <= NEXT;
 
             // The loop bookkeeping:

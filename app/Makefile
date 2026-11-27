@@ -8,7 +8,7 @@
 #   dmatest_rw  - the older read()/write() test (has a start-up race; see source)
 #   bwtest      - weight-lane bandwidth + lane_checker result check (multi_hp)
 #   axisdemo    - stream test for hw/axis_demo (axis_demo app)
-#   lineartest  - one LINEAR call through hw/controller, every sum checked
+#   lineartest  - one LINEAR call through hw/controller, every output checked
 
 # Plain `=`: make predefines CXX as g++, so `?=` would silently build for x86.
 # Still overridable: make CXX=...
