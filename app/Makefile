@@ -8,6 +8,7 @@
 #   dmatest_rw  - the older read()/write() test (has a start-up race; see source)
 #   bwtest      - weight-lane bandwidth + lane_checker result check (multi_hp)
 #   axisdemo    - stream test for hw/axis_demo (axis_demo app)
+#   lineartest  - one LINEAR call through hw/controller, every sum checked
 
 # Plain `=`: make predefines CXX as g++, so `?=` would silently build for x86.
 # Still overridable: make CXX=...
@@ -16,7 +17,7 @@ CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra
 CPPFLAGS += -I../driver      # mydma_uapi.h, shared with the driver
 LDFLAGS  ?= -static -pthread
 
-PROGS = dmatest dmatest_rw bwtest axisdemo
+PROGS = dmatest dmatest_rw bwtest axisdemo lineartest
 
 all: $(PROGS)
 
@@ -27,6 +28,9 @@ bwtest: bwtest.cpp ../driver/mydma_uapi.h
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
 
 axisdemo: axisdemo.cpp ../driver/mydma_uapi.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
+
+lineartest: lineartest.cpp ../driver/mydma_uapi.h
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
 
 dmatest_rw: dmatest_rw.cpp

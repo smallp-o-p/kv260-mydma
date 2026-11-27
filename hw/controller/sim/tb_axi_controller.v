@@ -5,12 +5,12 @@
 //   expected level-1 sums (from fp8_golden.level1_group_sums). This bench:
 //     * models the activation buffer (loaded / beat_count / rel, 2-clock reads)
 //     * drives the 4 weight lanes with random tvalid gaps
-//     * models the tile behaviourally: 16 exact integer sums for row 0,
-//       t_done a fixed TILE_LAT clocks after the t_last step
+//     * uses tile_ref.v (row-0 reference tile) with t_done delayed TILE_LAT
+//       clocks, like a real 16x16 tile
 //     * holds m_res_tready low at random and checks every sum and TLAST
 //   It runs CALLS calls back to back to exercise rel -> IDLE -> next load.
 //
-//   iverilog -g2005 -I <vecdir> -o tb tb_axi_controller.v ../axi_controller.v && vvp tb
+//   iverilog -g2005 -I <vecdir> -o tb tb_axi_controller.v ../axi_controller.v ../tile_ref.v && vvp tb
 `include "params.vh"
 
 module lane_src #(parameter FILE = "", parameter LEN = 1) (
@@ -39,7 +39,7 @@ endmodule
 
 module tb_axi_controller;
     localparam G = `G, LEN = `LANE_BEATS, NSUMS = `NSUMS;
-    localparam TILE_LAT = 35, CALLS = 2;
+    localparam TILE_LAT = 32, CALLS = 2;
     localparam [11:0] BEATS = 8 * G;           // what the buffer reports as beat_count
 
     reg clk = 0, rstn = 0;
@@ -69,38 +69,16 @@ module tb_axi_controller;
     lane_src #(.FILE({`VDIR, "/port2.hex"}), .LEN(LEN)) L2 (clk, rstn, restart, w_tvalid[2], w_tdata[2], w_tlast[2], w_tready[2]);
     lane_src #(.FILE({`VDIR, "/port3.hex"}), .LEN(LEN)) L3 (clk, rstn, restart, w_tvalid[3], w_tdata[3], w_tlast[3], w_tready[3]);
 
-    // ---------------- tile model (row 0 only) ----------------
-    wire t_valid, t_first, t_last;
+    // ---------------- tile: the synthesizable reference tile ----------------
+    // EXTRA_DONE_DELAY makes t_done late, like a real 16x16 systolic tile.
+    wire t_valid, t_first, t_last, t_done;
     wire [127:0] t_a, t_b;
-    reg  t_done = 0;
-    reg  signed [63:0] acc [0:15];
     wire [16*44-1:0] t_c;
-    genvar gc;
-    generate for (gc = 0; gc < 16; gc = gc + 1) begin : C
-        assign t_c[gc*44 +: 44] = acc[gc][43:0];
-    end endgenerate
-
-    // E4M3 code -> value * 2^9 as an exact integer (golden E4M3_TO_INT9)
-    function signed [31:0] dec(input [7:0] c);
-        reg [31:0] mag;
-        begin
-            mag = (c[6:3] == 0) ? c[2:0] : ({28'd0, 1'b1, c[2:0]} << (c[6:3] - 1));
-            dec = c[7] ? -$signed(mag) : $signed(mag);
-        end
-    endfunction
-
-    integer c, lat = -1, steps = 0;
-    always @(posedge clk) begin
-        t_done <= 0;
-        if (t_valid) begin
-            steps = steps + 1;
-            for (c = 0; c < 16; c = c + 1)
-                acc[c] <= (t_first ? 64'sd0 : acc[c]) + dec(t_a[7:0]) * dec(t_b[8*c +: 8]);
-            if (t_last) lat <= TILE_LAT;
-        end
-        if (lat > 0) lat <= lat - 1;
-        if (lat == 1) t_done <= 1;
-    end
+    integer steps = 0;
+    always @(posedge clk) if (t_valid) steps = steps + 1;
+    tile_ref #(.N(16), .EXTRA_DONE_DELAY(TILE_LAT)) tile (
+        .aclk(clk), .aresetn(rstn), .t_valid(t_valid), .t_first(t_first), .t_last(t_last),
+        .t_a(t_a), .t_b(t_b), .t_done(t_done), .t_c(t_c));
 
     // ---------------- results ----------------
     reg  [63:0] exp [0:NSUMS-1];
