@@ -8,8 +8,7 @@
       "pfm_name": "xilinx:kv260_som:memory_thing:0.0",
       "rev_ctrl_bd_flag": "RevCtrlBdOff",
       "synth_flow_mode": "None",
-      "tool_version": "2026.1",
-      "validated": "true"
+      "tool_version": "2026.1"
     },
     "design_tree": {
       "xlconstant_0": "",
@@ -47,7 +46,8 @@
       "axis_data_fifo_2": "",
       "axis_data_fifo_3": "",
       "activation_buffer_0": "",
-      "axi_controller_0": ""
+      "axi_controller_0": "",
+      "tile_ref_0": ""
     },
     "components": {
       "xlconstant_0": {
@@ -2224,6 +2224,9 @@
           "PSU__AFI0_COHERENCY": {
             "value": "0"
           },
+          "PSU__AFI1_COHERENCY": {
+            "value": "0"
+          },
           "PSU__AUX_REF_CLK__FREQMHZ": {
             "value": "33.333"
           },
@@ -2364,6 +2367,12 @@
           },
           "PSU__CRF_APB__DBG_FPD_CTRL__SRCSEL": {
             "value": "IOPLL"
+          },
+          "PSU__CRF_APB__DBG_TRACE_CTRL__ACT_FREQMHZ": {
+            "value": "125"
+          },
+          "PSU__CRF_APB__DBG_TRACE_CTRL__FREQMHZ": {
+            "value": "125"
           },
           "PSU__CRF_APB__DBG_TRACE_CTRL__SRCSEL": {
             "value": "IOPLL"
@@ -3433,6 +3442,12 @@
           "PSU__IRQ_P2F_TTC3__INT2": {
             "value": "0"
           },
+          "PSU__IRQ_P2F_USB2_OTG__INT0": {
+            "value": "0"
+          },
+          "PSU__IRQ_P2F_USB2_OTG__INT1": {
+            "value": "0"
+          },
           "PSU__IRQ_P2F_USB3_ENDPOINT__INT0": {
             "value": "0"
           },
@@ -3679,7 +3694,7 @@
             ]
           },
           "PSU__PROTECTION__MASTERS": {
-            "value": "USB1:NonSecure;0|USB0:NonSecure;0|S_AXI_LPD:NA;0|S_AXI_HPC1_FPD:NA;0|S_AXI_HPC0_FPD:NA;1|S_AXI_HP3_FPD:NA;1|S_AXI_HP2_FPD:NA;1|S_AXI_HP1_FPD:NA;1|S_AXI_HP0_FPD:NA;1|S_AXI_ACP:NA;0|S_AXI_ACE:NA;0|SD1:NonSecure;0|SD0:NonSecure;0|SATA1:NonSecure;0|SATA0:NonSecure;0|RPU1:Secure;1|RPU0:Secure;1|QSPI:NonSecure;1|PMU:NA;1|PCIe:NonSecure;0|NAND:NonSecure;0|LDMA:NonSecure;1|GPU:NonSecure;1|GEM3:NonSecure;0|GEM2:NonSecure;0|GEM1:NonSecure;0|GEM0:NonSecure;0|FDMA:NonSecure;1|DP:NonSecure;0|DAP:NA;1|Coresight:NA;1|CSU:NA;1|APU:NA;1"
+            "value": "USB1:NonSecure;0|USB0:NonSecure;0|S_AXI_LPD:NA;0|S_AXI_HPC1_FPD:NA;1|S_AXI_HPC0_FPD:NA;1|S_AXI_HP3_FPD:NA;1|S_AXI_HP2_FPD:NA;0|S_AXI_HP1_FPD:NA;1|S_AXI_HP0_FPD:NA;1|S_AXI_ACP:NA;0|S_AXI_ACE:NA;0|SD1:NonSecure;0|SD0:NonSecure;0|SATA1:NonSecure;0|SATA0:NonSecure;0|RPU1:Secure;1|RPU0:Secure;1|QSPI:NonSecure;1|PMU:NA;1|PCIe:NonSecure;0|NAND:NonSecure;0|LDMA:NonSecure;1|GPU:NonSecure;1|GEM3:NonSecure;0|GEM2:NonSecure;0|GEM1:NonSecure;0|GEM0:NonSecure;0|FDMA:NonSecure;1|DP:NonSecure;0|DAP:NA;1|Coresight:NA;1|CSU:NA;1|APU:NA;1"
           },
           "PSU__PROTECTION__MASTERS_TZ": {
             "value": "GEM0:NonSecure|SD1:NonSecure|GEM2:NonSecure|GEM1:NonSecure|GEM3:NonSecure|PCIe:NonSecure|DP:NonSecure|NAND:NonSecure|GPU:NonSecure|USB1:NonSecure|USB0:NonSecure|LDMA:NonSecure|FDMA:NonSecure|QSPI:NonSecure|SD0:NonSecure"
@@ -3744,13 +3759,13 @@
           "PSU__SAXIGP0__DATA_WIDTH": {
             "value": "128"
           },
+          "PSU__SAXIGP1__DATA_WIDTH": {
+            "value": "128"
+          },
           "PSU__SAXIGP2__DATA_WIDTH": {
             "value": "128"
           },
           "PSU__SAXIGP3__DATA_WIDTH": {
-            "value": "128"
-          },
-          "PSU__SAXIGP4__DATA_WIDTH": {
             "value": "128"
           },
           "PSU__SAXIGP5__DATA_WIDTH": {
@@ -3855,9 +3870,6 @@
           "PSU__S_AXI_GP3__FREQMHZ": {
             "value": "249.997498"
           },
-          "PSU__S_AXI_GP4__FREQMHZ": {
-            "value": "249.997498"
-          },
           "PSU__S_AXI_GP5__FREQMHZ": {
             "value": "249.997498"
           },
@@ -3957,13 +3969,13 @@
           "PSU__USE_DIFF_RW_CLK_GP0": {
             "value": "0"
           },
+          "PSU__USE_DIFF_RW_CLK_GP1": {
+            "value": "0"
+          },
           "PSU__USE_DIFF_RW_CLK_GP2": {
             "value": "0"
           },
           "PSU__USE_DIFF_RW_CLK_GP3": {
-            "value": "0"
-          },
-          "PSU__USE_DIFF_RW_CLK_GP4": {
             "value": "0"
           },
           "PSU__USE_DIFF_RW_CLK_GP5": {
@@ -4066,7 +4078,7 @@
             "value": "1"
           },
           "PSU__USE__S_AXI_GP1": {
-            "value": "0"
+            "value": "1"
           },
           "PSU__USE__S_AXI_GP2": {
             "value": "1"
@@ -4075,7 +4087,7 @@
             "value": "1"
           },
           "PSU__USE__S_AXI_GP4": {
-            "value": "1"
+            "value": "0"
           },
           "PSU__USE__S_AXI_GP5": {
             "value": "1"
@@ -4197,6 +4209,11 @@
             "mode": "Slave",
             "memory_map_ref": "SAXIGP0"
           },
+          "S_AXI_HPC1_FPD": {
+            "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
+            "mode": "Slave",
+            "memory_map_ref": "SAXIGP1"
+          },
           "S_AXI_HP0_FPD": {
             "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
             "mode": "Slave",
@@ -4206,11 +4223,6 @@
             "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
             "mode": "Slave",
             "memory_map_ref": "SAXIGP3"
-          },
-          "S_AXI_HP2_FPD": {
-            "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
-            "mode": "Slave",
-            "memory_map_ref": "SAXIGP4"
           },
           "S_AXI_HP3_FPD": {
             "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
@@ -5824,14 +5836,6 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
-              },
-              "FREQ_HZ": {
-                "value": "249997498",
-                "value_src": "user_prop"
-              },
-              "CLK_DOMAIN": {
-                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
-                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -5897,14 +5901,6 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
-              },
-              "FREQ_HZ": {
-                "value": "249997498",
-                "value_src": "user_prop"
-              },
-              "CLK_DOMAIN": {
-                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
-                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -5970,14 +5966,6 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
-              },
-              "FREQ_HZ": {
-                "value": "249997498",
-                "value_src": "user_prop"
-              },
-              "CLK_DOMAIN": {
-                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
-                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -6043,14 +6031,6 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
-              },
-              "FREQ_HZ": {
-                "value": "249997498",
-                "value_src": "user_prop"
-              },
-              "CLK_DOMAIN": {
-                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
-                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -6116,14 +6096,6 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
-              },
-              "FREQ_HZ": {
-                "value": "249997498",
-                "value_src": "user_prop"
-              },
-              "CLK_DOMAIN": {
-                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
-                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -6166,14 +6138,6 @@
               "ASSOCIATED_RESET": {
                 "value": "aresetn",
                 "value_src": "constant"
-              },
-              "FREQ_HZ": {
-                "value": "249997498",
-                "value_src": "user_prop"
-              },
-              "CLK_DOMAIN": {
-                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
-                "value_src": "default_prop"
               }
             }
           },
@@ -6217,10 +6181,7 @@
           "t_valid": {
             "direction": "O"
           },
-          "t_first": {
-            "direction": "O"
-          },
-          "t_last": {
+          "t_clear": {
             "direction": "O"
           },
           "t_a": {
@@ -6233,9 +6194,6 @@
             "left": "127",
             "right": "0"
           },
-          "t_done": {
-            "direction": "I"
-          },
           "t_c": {
             "direction": "I",
             "left": "703",
@@ -6243,6 +6201,62 @@
           },
           "err": {
             "direction": "O"
+          }
+        }
+      },
+      "tile_ref_0": {
+        "vlnv": "xilinx.com:module_ref:tile_ref:1.0",
+        "ip_revision": "1",
+        "xci_name": "memthing_tile_ref_0_0",
+        "xci_path": "ip\\memthing_tile_ref_0_0_1\\memthing_tile_ref_0_0.xci",
+        "inst_hier_path": "tile_ref_0",
+        "has_run_ip_tcl": "true",
+        "reference_info": {
+          "ref_type": "hdl",
+          "ref_name": "tile_ref",
+          "boundary_crc": "0x0"
+        },
+        "ports": {
+          "aclk": {
+            "type": "clk",
+            "direction": "I",
+            "parameters": {
+              "ASSOCIATED_RESET": {
+                "value": "aresetn",
+                "value_src": "constant"
+              }
+            }
+          },
+          "aresetn": {
+            "type": "rst",
+            "direction": "I",
+            "parameters": {
+              "POLARITY": {
+                "value": "ACTIVE_LOW",
+                "value_src": "constant"
+              }
+            }
+          },
+          "t_valid": {
+            "direction": "I"
+          },
+          "t_clear": {
+            "direction": "I"
+          },
+          "t_a": {
+            "direction": "I",
+            "left": "127",
+            "right": "0"
+          },
+          "t_b": {
+            "direction": "I",
+            "left": "127",
+            "right": "0"
+          },
+          "t_c": {
+            "direction": "O",
+            "left": "703",
+            "right": "0"
           }
         }
       }
@@ -6419,7 +6433,7 @@
       "smartconnect_2_M00_AXI": {
         "interface_ports": [
           "smartconnect_2/M00_AXI",
-          "zynq_ultra_ps_e_0/S_AXI_HP2_FPD"
+          "zynq_ultra_ps_e_0/S_AXI_HPC1_FPD"
         ]
       },
       "smartconnect_3_M00_AXI": {
@@ -6490,6 +6504,30 @@
           "activation_buffer_0/rel"
         ]
       },
+      "axi_controller_0_t_a": {
+        "ports": [
+          "axi_controller_0/t_a",
+          "tile_ref_0/t_a"
+        ]
+      },
+      "axi_controller_0_t_b": {
+        "ports": [
+          "axi_controller_0/t_b",
+          "tile_ref_0/t_b"
+        ]
+      },
+      "axi_controller_0_t_clear": {
+        "ports": [
+          "axi_controller_0/t_clear",
+          "tile_ref_0/t_clear"
+        ]
+      },
+      "axi_controller_0_t_valid": {
+        "ports": [
+          "axi_controller_0/t_valid",
+          "tile_ref_0/t_valid"
+        ]
+      },
       "axi_dma_0_mm2s_introut": {
         "ports": [
           "axi_dma_0/mm2s_introut",
@@ -6552,7 +6590,14 @@
           "smartconnect_4/aresetn",
           "smartconnect_3/aresetn",
           "activation_buffer_0/aresetn",
-          "axi_controller_0/aresetn"
+          "axi_controller_0/aresetn",
+          "tile_ref_0/aresetn"
+        ]
+      },
+      "tile_ref_0_t_c": {
+        "ports": [
+          "tile_ref_0/t_c",
+          "axi_controller_0/t_c"
         ]
       },
       "xlconcat_0_dout": {
@@ -6609,10 +6654,11 @@
           "zynq_ultra_ps_e_0/saxihpc0_fpd_aclk",
           "zynq_ultra_ps_e_0/saxihp0_fpd_aclk",
           "zynq_ultra_ps_e_0/saxihp1_fpd_aclk",
-          "zynq_ultra_ps_e_0/saxihp2_fpd_aclk",
           "zynq_ultra_ps_e_0/saxihp3_fpd_aclk",
           "activation_buffer_0/aclk",
-          "axi_controller_0/aclk"
+          "zynq_ultra_ps_e_0/saxihpc1_fpd_aclk",
+          "axi_controller_0/aclk",
+          "tile_ref_0/aclk"
         ]
       },
       "zynq_ultra_ps_e_0_pl_resetn0": {
@@ -6681,29 +6727,19 @@
         "address_spaces": {
           "Data_MM2S": {
             "segments": {
-              "SEG_zynq_ultra_ps_e_0_HP2_DDR_LOW": {
-                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_DDR_LOW",
+              "SEG_zynq_ultra_ps_e_0_HPC1_DDR_LOW": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP1/HPC1_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
-              },
-              "SEG_zynq_ultra_ps_e_0_HP2_QSPI": {
-                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_QSPI",
-                "offset": "0xC0000000",
-                "range": "512M"
               }
             }
           },
           "Data_SG": {
             "segments": {
-              "SEG_zynq_ultra_ps_e_0_HP2_DDR_LOW": {
-                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_DDR_LOW",
+              "SEG_zynq_ultra_ps_e_0_HPC1_DDR_LOW": {
+                "address_block": "/zynq_ultra_ps_e_0/SAXIGP1/HPC1_DDR_LOW",
                 "offset": "0x00000000",
                 "range": "2G"
-              },
-              "SEG_zynq_ultra_ps_e_0_HP2_QSPI": {
-                "address_block": "/zynq_ultra_ps_e_0/SAXIGP4/HP2_QSPI",
-                "offset": "0xC0000000",
-                "range": "512M"
               }
             }
           }

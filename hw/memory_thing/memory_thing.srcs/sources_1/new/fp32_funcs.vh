@@ -176,3 +176,130 @@ function [31:0] fp_add2(input [64:0] h);
         end
     end
 endfunction
+
+// =====================================================================
+// Finer stages, for 250 MHz (Nov 27). Same arithmetic as the functions
+// above, cut into pieces with a register between each. level2.v uses these;
+// tb_fp32.v checks that each chain gives exactly the same bits.
+//
+//   cvt : fp_cvt_a -> fp_cvt_b -> fp_cvt_c -> fp_cvt2            (= fp_cvt2(fp_cvt1(x)))
+//   fmul: fp_mul1  -> (extra register, for the DSP) -> fp_mul2   (unchanged)
+//   fadd: fp_add_a -> fp_add_b -> fp_add_c -> fp_add_d -> fp_add_e
+//         -> fp_add_f -> fp_add_g -> fp_add_h                    (= fp_add2(fp_add1(a, b)))
+// =====================================================================
+
+// ---- cvt a: magnitude.  Packed {s, mag[43:0]} = 45 bits ----
+function [44:0] fp_cvt_a(input [43:0] x);
+    begin
+        fp_cvt_a = {x[43], x[43] ? (~x + 1'b1) : x};
+    end
+endfunction
+
+// ---- cvt b: leading zeros.  Packed {s, lz[5:0], mag[43:0]} = 51 bits ----
+function [50:0] fp_cvt_b(input [44:0] h);
+    begin
+        fp_cvt_b = {h[44], fp_lzc44(h[43:0]), h[43:0]};
+    end
+endfunction
+
+// ---- cvt c: normalise.  Packed like fp_cvt1: {zero, s, e[11:0], norm[43:0]} ----
+function [57:0] fp_cvt_c(input [50:0] h);
+    reg        s;
+    reg [5:0]  lz;
+    reg [43:0] mag;
+    begin
+        {s, lz, mag} = h;
+        fp_cvt_c = {(mag == 44'd0), s, 12'sd152 - $signed({6'd0, lz}), mag << lz};
+    end
+endfunction
+
+// ---- add a: flush denormal inputs, order by magnitude.  Packed {L, S} = 64 bits ----
+function [63:0] fp_add_a(input [31:0] a_in, input [31:0] b_in);
+    reg [31:0] a, b;
+    begin
+        a = (a_in[30:23] == 8'd0) ? {a_in[31], 31'd0} : a_in;
+        b = (b_in[30:23] == 8'd0) ? {b_in[31], 31'd0} : b_in;
+        fp_add_a = (a[30:0] >= b[30:0]) ? {a, b} : {b, a};
+    end
+endfunction
+
+// ---- add b: exponent difference (clamped to 50), mantissas.
+//      Packed {zeroL, sL, sS, eL[7:0], mL[23:0], mS[23:0], d[5:0]} = 65 bits ----
+function [64:0] fp_add_b(input [63:0] h);
+    reg [31:0] L, S;
+    reg [7:0]  d;
+    begin
+        {L, S} = h;
+        d = L[30:23] - S[30:23];
+        fp_add_b = {(L[30:23] == 8'd0), L[31], S[31], L[30:23],
+                    (L[30:23] == 8'd0) ? 24'd0 : {1'b1, L[22:0]},
+                    (S[30:23] == 8'd0) ? 24'd0 : {1'b1, S[22:0]},
+                    (d > 8'd50) ? 6'd50 : d[5:0]};
+    end
+endfunction
+
+// ---- add c: align the smaller mantissa.
+//      Packed {zeroL, sL, sS, eL[7:0], mL[23:0], sh[50:0]} = 86 bits ----
+function [85:0] fp_add_c(input [64:0] h);
+    begin
+        fp_add_c = {h[64:30], {h[29:6], 27'd0} >> h[5:0]};
+    end
+endfunction
+
+// ---- add d: sticky bit.  Packed like fp_add1 (65 bits) ----
+function [64:0] fp_add_d(input [85:0] h);
+    begin
+        fp_add_d = {h[85:51], 3'b000, h[50:25], |h[24:0]};
+    end
+endfunction
+
+// ---- add e: add or subtract.  Packed {zeroL, sL, sS, eL[7:0], sum[27:0]} = 39 bits ----
+function [38:0] fp_add_e(input [64:0] h);
+    reg        zeroL, sL, sS;
+    reg [7:0]  eL;
+    reg [26:0] mL, mS;
+    begin
+        {zeroL, sL, sS, eL, mL, mS} = h;
+        fp_add_e = {zeroL, sL, sS, eL,
+                    (sL == sS) ? ({1'b0, mL} + {1'b0, mS}) : ({1'b0, mL} - {1'b0, mS})};
+    end
+endfunction
+
+// ---- add f: leading zeros.  Packed {zeroL, sL, sS, eL[7:0], sum[27:0], lz[4:0]} = 44 bits ----
+function [43:0] fp_add_f(input [38:0] h);
+    begin
+        fp_add_f = {h, fp_lzc27(h[26:0])};
+    end
+endfunction
+
+// ---- add g: normalise.  Packed {special, rsign, s, e[11:0], m[26:0]} = 42 bits
+//      special = the result is a zero (sign rsign) and needs no rounding ----
+function [41:0] fp_add_g(input [43:0] h);
+    reg        zeroL, sL, sS;
+    reg [7:0]  eL;
+    reg [27:0] sum;
+    reg [4:0]  lz;
+    begin
+        {zeroL, sL, sS, eL, sum, lz} = h;
+        if (zeroL)                                  // both zero: -0 only if both are -0
+            fp_add_g = {1'b1, sL & sS, 40'd0};
+        else if (sum == 28'd0)                      // exact cancellation is +0
+            fp_add_g = {1'b1, 1'b0, 40'd0};
+        else if (sum[27])                           // carry: shift right one
+            fp_add_g = {1'b0, 1'b0, sL, $signed({4'd0, eL}) + 12'sd1, {sum[27:2], sum[1] | sum[0]}};
+        else                                        // normalise left
+            fp_add_g = {1'b0, 1'b0, sL, $signed({4'd0, eL}) - $signed({7'd0, lz}), sum[26:0] << lz};
+    end
+endfunction
+
+// ---- add h: round ----
+function [31:0] fp_add_h(input [41:0] h);
+    reg        special, rs, s;
+    reg signed [11:0] e;
+    reg [26:0] m;
+    begin
+        {special, rs, s, e, m} = h;
+        if (special) fp_add_h = {rs, 31'd0};
+        else         fp_add_h = fp_round(s, e, m[25:3], m[2], |m[1:0]);
+    end
+endfunction
