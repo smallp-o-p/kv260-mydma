@@ -27,8 +27,8 @@ module axi_controller #(
     parameter N = 16,                      // tile width (outputs per granule); only 16 works
     // Tile latency: t_c holds the final sums TILE_LAT clocks after the clock
     // edge that takes a granule's last step (t_valid = 1, k = 127).
-    // tile_ref: 2. Too small reads unfinished sums; too big only costs clocks.
-    parameter TILE_LAT = 2
+    // tile_ref: 4. Too small reads unfinished sums; too big only costs clocks.
+    parameter TILE_LAT = 4
 )(
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 aclk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF s_w0:s_w1:s_w2:s_w3:m_res, ASSOCIATED_RESET aresetn" *)
@@ -114,9 +114,21 @@ module axi_controller #(
     localparam MAX_G = 24;   // K <= 3072
     reg [4:0]  G;            // number of K-groups, beat_count / 9
     // beat_count / 9 without a divider: x * 57 >> 9 is exact for multiples of 9 below 4608
-    wire [ADDR_WIDTH+5:0] bc57 = beat_count * 57;
-    wire [ADDR_WIDTH-4:0] G9   = bc57[ADDR_WIDTH+5:9];
-    wire       bad_len = (beat_count == 0) || (G9 > MAX_G) || (G9 * 9 != beat_count);
+    // Registered in two steps (timing). IDLE only starts once loaded has been
+    // high for 3 clocks in a row, so G9 and bad_len belong to this load.
+    reg  [ADDR_WIDTH+5:0] bc57;
+    reg  [ADDR_WIDTH-1:0] bc_r;
+    reg  [ADDR_WIDTH-4:0] G9;
+    reg                   bad_len;
+    reg  [1:0]            ld_q;      // loaded, 1 and 2 clocks ago (continuously)
+    always @(posedge aclk) begin
+        bc57    <= beat_count * 57;
+        bc_r    <= beat_count;
+        G9      <= bc57[ADDR_WIDTH+5:9];
+        bad_len <= (bc_r == 0) || (bc57[ADDR_WIDTH+5:9] > MAX_G) || (bc57[ADDR_WIDTH+5:9] * 9 != bc_r);
+        ld_q    <= aresetn ? {ld_q[0] & loaded, loaded} : 2'b00;
+    end
+    wire load_ready = loaded && ld_q[1] && ld_q[0];
     reg [4:0]  g;
     reg [1:0]  p;
     reg [6:0]  kk;
@@ -216,7 +228,7 @@ module axi_controller #(
             case (current_state)
             // Wait for a load. !rel: in the clock after REL the buffer still
             // shows loaded = 1 (it clears on rel), so don't restart on it.
-            IDLE: if (loaded && !rel) begin
+            IDLE: if (load_ready && !rel) begin
                 G <= G9[4:0];
                 g <= 5'd0;
                 p <= 2'd0;

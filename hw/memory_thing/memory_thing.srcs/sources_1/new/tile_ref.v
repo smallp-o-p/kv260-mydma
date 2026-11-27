@@ -23,10 +23,13 @@
 //     controller reads it before it clears.
 //   * t_c: column c's sum (row 0) in bits [44c +: 44].
 //
-// Pipeline: decode (1) -> multiply (1) -> accumulate (1), so LAT = 2 (the
-// last step is registered on edge T, its sum lands on edge T + 2). 16
-// multipliers of 19 x 19 bits, so 16 DSPs. EXTRA_LAT delays t_c by that many
-// more clocks (LAT = 2 + EXTRA_LAT), to imitate a bigger tile in simulation.
+// Pipeline (one register after each step, for 250 MHz):
+//   input regs -> decode -> pre-add (a or 2a) -> multiply -> accumulate
+// The last step is registered on edge T and its sum lands on edge T + 4, so
+// LAT = 4. Like pe_dsp48e2, the weight keeps one bit of its shift back so it
+// fits the DSP's 18-bit B port, and A is doubled instead (d = 1): one
+// 20 x 18 multiply per column, 16 DSPs. EXTRA_LAT delays t_c by that many
+// more clocks (LAT = 4 + EXTRA_LAT), to imitate a bigger tile in simulation.
 
 module tile_ref #(
     parameter N = 16,
@@ -39,46 +42,73 @@ module tile_ref #(
     input  wire [8*N-1:0]    t_b,
     output wire [N*44-1:0]   t_c
 );
-    // E4M3 code -> value * 2^9 as a signed integer (fp8_golden E4M3_TO_INT9).
+    // Activation code -> value * 2^9 as a signed integer (fp8_golden E4M3_TO_INT9).
     // Normal: (8 + m) << (e - 1). Subnormal (e = 0): m. NaN codes 0x7F/0xFF -> 0.
     // Largest magnitude 448 -> 229376, so 19 bits signed.
-    function signed [18:0] dec(input [7:0] c);
+    function signed [18:0] deca(input [7:0] c);
         reg [17:0] mag;
         begin
             if (c[6:0] == 7'h7f)      mag = 18'd0;
             else if (c[6:3] == 4'd0)  mag = {15'd0, c[2:0]};
             else                      mag = {14'd0, 1'b1, c[2:0]} << (c[6:3] - 1'b1);
-            dec = c[7] ? -$signed({1'b0, mag}) : $signed({1'b0, mag});
+            deca = c[7] ? -$signed({1'b0, mag}) : $signed({1'b0, mag});
         end
     endfunction
 
-    // ---- stage 1: decode ----
-    reg               v1;
+    // Weight code -> {d, b}: value * 2^9 = b * (d ? 2 : 1), b in 18 bits signed.
+    //   e >= 2: b = (8 + m) << (e - 2), d = 1.   e = 1: b = 8 + m.   e = 0: b = m.
+    function [18:0] decb(input [7:0] c);
+        reg [16:0] mag;
+        reg        d;
+        begin
+            d = (c[6:3] >= 4'd2);
+            if (c[6:0] == 7'h7f)      mag = 17'd0;
+            else if (c[6:3] == 4'd0)  mag = {14'd0, c[2:0]};
+            else if (!d)              mag = {13'd0, 1'b1, c[2:0]};
+            else                      mag = {13'd0, 1'b1, c[2:0]} << (c[6:3] - 4'd2);
+            decb = {d, c[7] ? -$signed({1'b0, mag}) : $signed({1'b0, mag})};
+        end
+    endfunction
+
+    reg [4:1]         v;                    // v[i]: stage i holds a real step (v[4]: m3)
+    // ---- stage 1: input registers (t_a/t_b come straight from the controller's muxes) ----
+    reg [7:0]         a0;
+    reg [8*N-1:0]     b0;
+    // ---- stage 2: decode ----
     reg signed [18:0] a1;
-    reg signed [18:0] b1 [0:N-1];
-    // ---- stage 2: multiply ----
-    reg               v2;
-    reg signed [36:0] p2 [0:N-1];
-    // ---- stage 3: accumulate ----
+    reg signed [17:0] b1 [0:N-1];
+    reg [N-1:0]       d1;
+    // ---- stage 3: pre-add: a or 2a per column ----
+    reg signed [19:0] ad2 [0:N-1];
+    reg signed [17:0] b2  [0:N-1];
+    // ---- stage 4: multiply ----
+    reg signed [37:0] m3  [0:N-1];
+    // ---- accumulate (lands on the 4th edge) ----
     reg signed [43:0] acc [0:N-1];
 
     integer c;
     always @(posedge aclk) begin
-        if (!aresetn) begin
-            v1 <= 0; v2 <= 0;
-        end else begin
-            v1 <= t_valid;
-            a1 <= dec(t_a[7:0]);
-            for (c = 0; c < N; c = c + 1) b1[c] <= dec(t_b[8*c +: 8]);
+        if (!aresetn) v <= 0;
+        else          v <= {v[3:1], t_valid};
 
-            v2 <= v1;
-            for (c = 0; c < N; c = c + 1) p2[c] <= a1 * b1[c];
+        a0 <= t_a[7:0];
+        b0 <= t_b;
 
-            if (t_clear)
-                for (c = 0; c < N; c = c + 1) acc[c] <= 44'sd0;
-            else if (v2)
-                for (c = 0; c < N; c = c + 1) acc[c] <= acc[c] + p2[c];
+        a1 <= deca(a0);
+        for (c = 0; c < N; c = c + 1) {d1[c], b1[c]} <= decb(b0[8*c +: 8]);
+
+        for (c = 0; c < N; c = c + 1) begin
+            ad2[c] <= d1[c] ? (a1 <<< 1) : a1;
+            b2[c]  <= b1[c];
         end
+
+        for (c = 0; c < N; c = c + 1) m3[c] <= ad2[c] * b2[c];
+
+        // t_clear only comes while the tile is idle, so it goes straight to the sums
+        if (!aresetn || t_clear)
+            for (c = 0; c < N; c = c + 1) acc[c] <= 44'sd0;
+        else if (v[4])
+            for (c = 0; c < N; c = c + 1) acc[c] <= acc[c] + m3[c];
     end
 
     wire [N*44-1:0] acc_flat;

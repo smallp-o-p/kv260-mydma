@@ -7,7 +7,7 @@
 //     * drives the 4 weight lanes with random tvalid gaps
 //     * uses tile_ref.v (row-0 reference tile) with t_c delayed EXTRA_LAT
 //       clocks, like a real 16x16 tile, and the controller's TILE_LAT set to
-//       the tile's exact latency (2 + EXTRA_LAT). -DLAT_SHORT sets it one
+//       the tile's exact latency (4 + EXTRA_LAT). -DLAT_SHORT sets it one
 //       too small, which must FAIL (proves the bench catches it).
 //     * holds m_res_tready low at random and checks every output bit for bit, and TLAST
 //   It runs CALLS calls back to back to exercise rel -> IDLE -> next load.
@@ -46,9 +46,9 @@ module tb_axi_controller;
 `endif
     localparam EXTRA_LAT = `EXTRA_LAT, CALLS = 2;
 `ifdef LAT_SHORT
-    localparam TILE_LAT = 2 + EXTRA_LAT - 1;
+    localparam TILE_LAT = 4 + EXTRA_LAT - 1;
 `else
-    localparam TILE_LAT = 2 + EXTRA_LAT;
+    localparam TILE_LAT = 4 + EXTRA_LAT;
 `endif
     localparam [11:0] BEATS = 9 * G;            // what the buffer reports as beat_count
 

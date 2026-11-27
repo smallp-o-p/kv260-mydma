@@ -48,7 +48,7 @@ Your tile can replace `tile_ref` if it does this (all in `tile_ref.v`'s header t
   44-bit signed sums.
 - Fixed latency: `t_c` holds the final sums `TILE_LAT` clocks after the clock
   edge that takes a group's last step. Set the controller's `TILE_LAT`
-  parameter to that number (`tile_ref`: 2). Too small reads unfinished sums;
+  parameter to that number (`tile_ref`: 4). Too small reads unfinished sums;
   too big only wastes clocks. Then **hold** `t_c` until `t_clear`.
   `t_c[44c +: 44]` = row 0, column c. In an output-stationary array that is
   just row 0's accumulators wired out, and `TILE_LAT` is the skew to PE (0,15)
@@ -96,7 +96,7 @@ Save a copy of the project first: bwtest needs lane_checker.
    words received, 9G; for K = 3072 that is 216.)
 7. Controller to tile, pin to pin: `t_valid`, `t_clear`, `t_a`, `t_b`, `t_c`.
    Set the controller's `TILE_LAT` (Customize Block) to the tile's latency:
-   2 for `tile_ref`.
+   4 for `tile_ref`.
 8. Every `aclk` to `pl_clk0`, every `aresetn` to `proc_sys_reset_0/peripheral_aresetn`.
    Leave `err` open, or put it on a System ILA.
 9. Validate, generate the bitstream, package it as before
