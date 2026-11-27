@@ -18,6 +18,7 @@ modules.order
 
 # User-space binaries
 /app/dmatest
+/app/lineartest
 /app/dmatest_rw
 /app/bwtest
 
@@ -41,3 +42,7 @@ vivado_pid*.zip
 *.backup.jou
 *.backup.log
 webtalk*
+
+# Editor/backup copies and stray board-folder copies
+*.bak
+hw/memory_thing/DDR_Access/
