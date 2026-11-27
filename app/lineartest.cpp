@@ -5,10 +5,8 @@
 //   w0..w3 (packed weights) --axi_dma_0..3 MM2S--> FIFOs ----+--> axi_controller <--> tile
 //   rx <--axi_dma_4 S2MM-- results <--------------------------+
 //
-// Version A (controller LEVEL2 = 0): the board returns one exact integer per
-//   (output n, K-group g), the raw tile sum as int64 (fp8_golden's level 1).
-// Version B (LEVEL2 = 1): the buffer also gets the activation scales, and the
-//   board returns y[n] as fp32 (level 2 on chip), bit-exact with fp8_golden.
+// The buffer gets the codes, then the activation scales s_a[g]; the board
+// returns y[n] as fp32 (level 2 on chip), bit-exact with fp8_golden.
 //
 // Random FP8 data and scales; weights packed like fp8_golden.pack_weight_streams.
 // The call needs two DMA commands at once: MYDMA_XFER_CMD (activations in,
@@ -17,12 +15,12 @@
 //
 // Build:  make -C app lineartest
 // Run:    sudo insmod mydma.ko max_xfer=1048576
-//         sudo ./lineartest                     # version A, N = 1024, K = 1024
-//         sudo ./lineartest 4096 1024 5 B       # N, K, calls, version
-// Sim:    ./lineartest 256 1024 1 B <dir>       # no board: writes the same data as
+//         sudo ./lineartest                     # N = 1024, K = 1024
+//         sudo ./lineartest 4096 1024 5         # N, K, calls
+// Sim:    ./lineartest 256 1024 1 <dir>         # no board: writes the same data as
 //                                               # hex for hw/controller/sim/tb_axi_controller.v
-// Limits: N a multiple of 64 (128 in version B, the weight-scale block),
-//         K a multiple of 128 and <= 3072, results <= 1 MiB.
+// Limits: N a multiple of 128 (the weight-scale block), K a multiple of 128
+//         and <= 3072, results <= 1 MiB.
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -85,7 +83,7 @@ static float level2(const int64_t *iacc, const float *sa, const float *sw, unsig
 // Hex files for hw/controller/sim/tb_axi_controller.v (one beat per line, byte 0 = LSB).
 static void dump(const char *dir, const std::vector<uint8_t> *lane, uint32_t lane_bytes,
                  const std::vector<uint8_t> &tx, const std::vector<uint8_t> &expect,
-                 unsigned word_bytes, unsigned G, unsigned N, bool ver_b) {
+                 unsigned G, unsigned N) {
     ::mkdir(dir, 0755);                      // fine if it already exists
     auto open_w = [&](const char *name) {
         std::string path = std::string(dir) + "/" + name;
@@ -106,11 +104,10 @@ static void dump(const char *dir, const std::vector<uint8_t> *lane, uint32_t lan
         lines(open_w(name), lane[p].data(), lane_bytes, 16);
     }
     lines(open_w("act.hex"), tx.data(), tx.size(), 16);
-    lines(open_w("exp.hex"), expect.data(), expect.size(), word_bytes);
+    lines(open_w("exp.hex"), expect.data(), expect.size(), 4);
     FILE *f = open_w("params.vh");
-    std::fprintf(f, "`define G %u\n`define LANE_BEATS %u\n`define NSUMS %u\n`define NOUT %u\n"
-                    "`define LEVEL2 %d\n`define VDIR \"%s\"\n",
-                 G, lane_bytes / 16, N * G, N, ver_b ? 1 : 0, dir);
+    std::fprintf(f, "`define G %u\n`define LANE_BEATS %u\n`define NOUT %u\n`define VDIR \"%s\"\n",
+                 G, lane_bytes / 16, N, dir);
     std::fclose(f);
     std::printf("wrote test vectors to %s\n", dir);
 }
@@ -119,19 +116,16 @@ int main(int argc, char **argv) {
     const unsigned N = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 1024;
     const unsigned K = argc > 2 ? std::strtoul(argv[2], nullptr, 0) : 1024;
     const unsigned calls = argc > 3 ? std::strtoul(argv[3], nullptr, 0) : 1;
-    const bool ver_b = argc > 4 && (argv[4][0] == 'B' || argv[4][0] == 'b');
-    const char *dump_dir = argc > 5 ? argv[5] : nullptr;
+    const char *dump_dir = argc > 4 ? argv[4] : nullptr;
     const unsigned G = K / GROUP;
-    if (N == 0 || N % (ver_b ? GROUP : T * P) || K == 0 || K % GROUP || K > 3072 || calls == 0) {
-        std::fprintf(stderr, "usage: %s [N] [K] [calls] [A|B] [dump dir]\n"
-                             "  N multiple of 64 (128 for B), K multiple of 128 and <= 3072\n",
+    if (N == 0 || N % GROUP || K == 0 || K % GROUP || K > 3072 || calls == 0) {
+        std::fprintf(stderr, "usage: %s [N] [K] [calls] [dump dir]\n"
+                             "  N multiple of 128, K multiple of 128 and <= 3072\n",
                      argv[0]);
         return 2;
     }
-    const unsigned word_bytes = ver_b ? 4 : 8;           // fp32 out, or int64 sums
-    const unsigned n_words = ver_b ? N : N * G;
     const uint32_t lane_bytes = (N / (T * P)) * G * (16 + GROUP * T);
-    const uint32_t res_bytes = n_words * word_bytes;
+    const uint32_t res_bytes = N * 4;                    // y[n], fp32
     if (res_bytes > MYDMA_BUF_SIZE) {
         std::fprintf(stderr, "results (%u bytes) don't fit the 1 MiB rx buffer\n", res_bytes);
         return 2;
@@ -145,14 +139,13 @@ int main(int argc, char **argv) {
     for (auto &c : W) c = random_code(rng);
     for (auto &c : x) c = random_code(rng);
     std::vector<float> sw(size_t((N + GROUP - 1) / GROUP) * G), sa(G);
-    for (auto &v : sw) v = ver_b ? scale(rng) : 1.0f;
+    for (auto &v : sw) v = scale(rng);
     for (auto &v : sa) v = scale(rng);
 
-    // ---- activation buffer contents: codes, then (version B) s_a[g] at word 8G + g ----
-    std::vector<uint8_t> tx(K + (ver_b ? 16 * G : 0), 0);
+    // ---- activation buffer contents: codes, then s_a[g] at word 8G + g ----
+    std::vector<uint8_t> tx(K + 16 * G, 0);
     std::memcpy(tx.data(), x.data(), K);
-    if (ver_b)
-        for (unsigned g = 0; g < G; ++g) std::memcpy(&tx[K + 16 * g], &sa[g], 4);
+    for (unsigned g = 0; g < G; ++g) std::memcpy(&tx[K + 16 * g], &sa[g], 4);
 
     // ---- pack the lanes: n-tile j -> lane j % 4; per tile, per group:
     //      one scale beat (s_w in bytes 0-3) + 128 rows of 16 bytes,
@@ -181,29 +174,18 @@ int main(int argc, char **argv) {
             iacc[size_t(n) * G + g] = s;
         }
 
-    // ---- expected results, as bytes, in the order the board sends them ----
-    //   A: for quad q, for group g, for lane p: 16 sums of tile 4q + p (int64)
-    //   B: y[0 .. N-1] (fp32)
-    std::vector<uint8_t> expect(size_t(n_words) * word_bytes);
-    if (!ver_b) {
-        size_t i = 0;
-        for (unsigned q = 0; q < N / (T * P); ++q)
-            for (unsigned g = 0; g < G; ++g)
-                for (unsigned p = 0; p < P; ++p)
-                    for (unsigned c = 0; c < T; ++c, ++i)
-                        std::memcpy(&expect[8 * i], &iacc[size_t((q * P + p) * T + c) * G + g], 8);
-    } else {
-        for (unsigned n = 0; n < N; ++n) {
-            const float y = level2(&iacc[size_t(n) * G], sa.data(), &sw[(n / GROUP) * G], G);
-            std::memcpy(&expect[4 * size_t(n)], &y, 4);
-        }
+    // ---- expected results, y[0 .. N-1] as fp32, in the order the board sends them ----
+    std::vector<uint8_t> expect(size_t(N) * 4);
+    for (unsigned n = 0; n < N; ++n) {
+        const float y = level2(&iacc[size_t(n) * G], sa.data(), &sw[(n / GROUP) * G], G);
+        std::memcpy(&expect[4 * size_t(n)], &y, 4);
     }
 
-    std::printf("version %c, N = %u, K = %u (G = %u): %u bytes per weight lane, %u result bytes\n",
-                ver_b ? 'B' : 'A', N, K, G, lane_bytes, res_bytes);
+    std::printf("N = %u, K = %u (G = %u): %u bytes per weight lane, %u result bytes\n",
+                N, K, G, lane_bytes, res_bytes);
 
     if (dump_dir) {
-        dump(dump_dir, lane, lane_bytes, tx, expect, word_bytes, G, N, ver_b);
+        dump(dump_dir, lane, lane_bytes, tx, expect, G, N);
         return 0;
     }
 
@@ -259,34 +241,22 @@ int main(int argc, char **argv) {
         if (xfer_ret < 0)   { errno = xfer_errno;   std::perror("MYDMA_XFER_CMD (max_xfer? dmesg?)"); }
 
         size_t bad = 0;
-        const size_t got = xfer_ret < 0 ? 0 : xa.rx_bytes / word_bytes;
-        for (size_t i = 0; i < n_words; ++i) {
-            const bool same = i < got && std::memcmp(&rxm[i * word_bytes], &expect[i * word_bytes],
-                                                     word_bytes) == 0;
-            if (same) continue;
+        const size_t got = xfer_ret < 0 ? 0 : xa.rx_bytes / 4;
+        for (size_t i = 0; i < N; ++i) {
+            if (i < got && std::memcmp(&rxm[4 * i], &expect[4 * i], 4) == 0) continue;
             if (bad < 5) {
-                if (ver_b) {
-                    float g, e;
-                    std::memcpy(&g, &rxm[4 * i], 4);
-                    std::memcpy(&e, &expect[4 * i], 4);
-                    std::printf("  y[%zu]: got %.9g (%08x), expected %.9g (%08x)\n", i, g, bits(g),
-                                e, bits(e));
-                } else {
-                    int64_t g, e;
-                    std::memcpy(&g, &rxm[8 * i], 8);
-                    std::memcpy(&e, &expect[8 * i], 8);
-                    std::printf("  sum %zu (n = %zu, g = %zu): got %lld, expected %lld\n", i,
-                                ((i / (T * P * G)) * P + (i / T) % P) * T + i % T,
-                                (i / (T * P)) % G, (long long)g, (long long)e);
-                }
+                float g, e;
+                std::memcpy(&g, &rxm[4 * i], 4);
+                std::memcpy(&e, &expect[4 * i], 4);
+                std::printf("  y[%zu]: got %.9g (%08x), expected %.9g (%08x)\n", i, g, bits(g),
+                            e, bits(e));
             }
             ++bad;
         }
-        const bool ok = stream_ret == 0 && xfer_ret == 0 && got == n_words && bad == 0;
+        const bool ok = stream_ret == 0 && xfer_ret == 0 && got == N && bad == 0;
         if (!ok) ++failed_calls;
-        std::printf("call %u: %zu of %u %s received, %zu wrong, weights streamed in %.1f us -> %s\n",
-                    call, got, n_words, ver_b ? "outputs" : "sums", bad, st.elapsed_ns / 1e3,
-                    ok ? "OK" : "FAIL");
+        std::printf("call %u: %zu of %u outputs received, %zu wrong, weights streamed in %.1f us -> %s\n",
+                    call, got, N, bad, st.elapsed_ns / 1e3, ok ? "OK" : "FAIL");
     }
     std::printf("%s\n", failed_calls ? "FAIL" : "PASS");
     return failed_calls ? 1 : 0;
