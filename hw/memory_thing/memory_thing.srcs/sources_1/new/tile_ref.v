@@ -17,19 +17,22 @@
 //   * Each product is exact: decode both codes to integers in units of 2^-9
 //     (so the product is in units of 2^-18) and add into 44-bit signed sums.
 //     That is fp8_golden.py's level 1, bit for bit.
-//   * The tile's latency is fixed and known: t_c holds the final sums
-//     LAT clocks after the clock edge that takes a group's last step.
-//     Set the controller's TILE_LAT to it. HOLD t_c until t_clear; the
-//     controller reads it before it clears.
+//   * t_done = 1 when no step is in flight anywhere in the tile, i.e. every
+//     step taken so far is in the sums. It must already be 0 in the clock
+//     right after a step is taken (build it from the valid bits the step
+//     loads, not from a register of t_done itself). The controller waits for
+//     it after a group's last step, then reads t_c: no counting, and the
+//     tile's latency doesn't matter. Mid-group t_done can be 1 during a
+//     stall; the controller ignores it then. HOLD t_c until t_clear.
 //   * t_c: column c's sum (row 0) in bits [44c +: 44].
 //
 // Pipeline (one register after each step, for 250 MHz):
 //   input regs -> decode -> pre-add (a or 2a) -> multiply -> accumulate
-// The last step is registered on edge T and its sum lands on edge T + 4, so
-// LAT = 4. Like pe_dsp48e2, the weight keeps one bit of its shift back so it
+// The last step is registered on edge T and its sum lands on edge T + 4
+// (t_done = 1 from then on). Like pe_dsp48e2, the weight keeps one bit of its shift back so it
 // fits the DSP's 18-bit B port, and A is doubled instead (d = 1): one
-// 20 x 18 multiply per column, 16 DSPs. EXTRA_LAT delays t_c by that many
-// more clocks (LAT = 4 + EXTRA_LAT), to imitate a bigger tile in simulation.
+// 20 x 18 multiply per column, 16 DSPs. EXTRA_LAT delays t_c (and t_done) by
+// that many more clocks, to imitate a bigger tile in simulation.
 
 module tile_ref #(
     parameter N = 16,
@@ -40,6 +43,7 @@ module tile_ref #(
     input  wire              t_valid, t_clear,
     input  wire [8*N-1:0]    t_a,
     input  wire [8*N-1:0]    t_b,
+    output wire              t_done,
     output wire [N*44-1:0]   t_c
 );
     // Activation code -> value * 2^9 as a signed integer (fp8_golden E4M3_TO_INT9).
@@ -117,16 +121,22 @@ module tile_ref #(
         assign acc_flat[gc*44 +: 44] = acc[gc];
     end endgenerate
 
-    // optional extra latency on t_c (simulation only)
+    // t_done: nothing in flight. v[1] is set on the same edge that takes a
+    // step, so t_done drops in the very next clock.
+    // Optional extra latency on t_c (simulation only), with its own valid bits.
     generate if (EXTRA_LAT == 0) begin : NO_DLY
-        assign t_c = acc_flat;
+        assign t_c    = acc_flat;
+        assign t_done = ~|v;
     end else begin : DLY
-        reg [N*44-1:0] sh [0:EXTRA_LAT-1];
+        reg [N*44-1:0]      sh [0:EXTRA_LAT-1];
+        reg [EXTRA_LAT-1:0] dv;          // dv[i]: sh[i] is not final yet
         integer i;
         always @(posedge aclk) begin
             sh[0] <= acc_flat;
             for (i = 1; i < EXTRA_LAT; i = i + 1) sh[i] <= sh[i-1];
+            dv <= aresetn ? {dv, v[4]} : {EXTRA_LAT{1'b0}};   // a sum changed: delay its "busy"
         end
-        assign t_c = sh[EXTRA_LAT-1];
+        assign t_c    = sh[EXTRA_LAT-1];
+        assign t_done = ~|v && ~|dv;
     end endgenerate
 endmodule
