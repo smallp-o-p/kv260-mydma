@@ -42,6 +42,11 @@ The datapath is one register stage with
 assign s_axis_tready = !out_valid || m_axis_tready;
 ```
 
+![axis_demo timing: five beats with a stall and a gap](timing.png)
+
+The waveform above is from a short Icarus run of this block (32-bit, ADD = 1).
+A green dot is a rising edge where a beat moves.
+
 "I can take a beat if my output is empty, or it is leaving this cycle." That
 gives one beat per clock with any stall pattern (the testbench checks
 512 beats in 512 cycles), and the outputs are all flops. A deeper pipeline
