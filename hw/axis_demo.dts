@@ -3,11 +3,10 @@
 //
 // Package:  APP=axis_demo bash hw/package.sh hw/axis_demo/axis_demo.bit
 //
-// Two things in the PL:
-//   axi_dma_0   @ 0xA000_0000  AXI DMA, MM2S + S2MM, 128-bit, on HP0.
-//               Owned by xilinx_dma; mydma.ko borrows its channels.
-//   axis_demo_0 @ 0xA001_0000  the demo block's AXI-Lite registers. No
-//               kernel driver: app/axisdemo.cpp maps them through /dev/mem.
+// The only CPU-visible thing in the PL is the DMA:
+//   axi_dma_0 @ 0xA000_0000  AXI DMA, MM2S + S2MM, 128-bit, on HP0.
+//             Owned by xilinx_dma; mydma.ko borrows its channels.
+// axis_demo sits on the DMA's streams and has no registers or node.
 /dts-v1/;
 /plugin/;
 

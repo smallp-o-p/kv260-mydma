@@ -1,8 +1,7 @@
 # build_bd.tcl - a complete, minimal KV260 design around axis_demo.v:
 #
-#                 M_AXI_HPM0_FPD (CPU -> PL registers)
-#   PS ---------------------------> sc_ctrl --+--> axi_dma_0/S_AXI_LITE  @ 0xA000_0000
-#                                             +--> axis_demo_0/s_axil    @ 0xA001_0000
+#                 M_AXI_HPM0_FPD (CPU -> DMA registers)
+#   PS ---------------------------> sc_ctrl ----> axi_dma_0/S_AXI_LITE  @ 0xA000_0000
 #
 #   DDR <--S_AXI_HP0_FPD-- sc_mem <--+-- axi_dma_0/M_AXI_SG    (descriptors)
 #                                    +-- axi_dma_0/M_AXI_MM2S  (reads input)
@@ -92,18 +91,17 @@ set_property -dict [list \
 
 # ---- The demo block (RTL module reference) ----------------------------------
 set demo [create_bd_cell -type module -reference axis_demo axis_demo_0]
-set_property CONFIG.DATA_WIDTH {128} $demo
+set_property -dict [list CONFIG.DATA_WIDTH {128} CONFIG.ADD {1}] $demo
 
 # Stream IN and OUT: one interface wire each.
 connect_bd_intf_net [get_bd_intf_pins axi_dma_0/M_AXIS_MM2S] [get_bd_intf_pins axis_demo_0/s_axis]
 connect_bd_intf_net [get_bd_intf_pins axis_demo_0/m_axis]    [get_bd_intf_pins axi_dma_0/S_AXIS_S2MM]
 
-# ---- Control path: PS -> registers ------------------------------------------
+# ---- Control path: PS -> the DMA's registers (axis_demo has none) -----------
 set scc [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 sc_ctrl]
-set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {2}] $scc
+set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {1}] $scc
 connect_bd_intf_net [get_bd_intf_pins zynq_ultra_ps_e_0/M_AXI_HPM0_FPD] [get_bd_intf_pins sc_ctrl/S00_AXI]
 connect_bd_intf_net [get_bd_intf_pins sc_ctrl/M00_AXI] [get_bd_intf_pins axi_dma_0/S_AXI_LITE]
-connect_bd_intf_net [get_bd_intf_pins sc_ctrl/M01_AXI] [get_bd_intf_pins axis_demo_0/s_axil]
 
 # ---- Data path: DMA -> DDR --------------------------------------------------
 set scm [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 sc_mem]
@@ -140,11 +138,9 @@ connect_bd_net [get_bd_pins axi_dma_0/mm2s_introut] [get_bd_pins irq_concat/In0]
 connect_bd_net [get_bd_pins axi_dma_0/s2mm_introut] [get_bd_pins irq_concat/In1]
 connect_bd_net [get_bd_pins irq_concat/dout] [get_bd_pins zynq_ultra_ps_e_0/pl_ps_irq0]
 
-# ---- Address map (must match hw/axis_demo.dts and app/axisdemo.cpp) -------
+# ---- Address map (must match hw/axis_demo.dts) -----------------------------
 assign_bd_address -target_address_space /zynq_ultra_ps_e_0/Data \
     -offset 0xA0000000 -range 64K [get_bd_addr_segs axi_dma_0/S_AXI_LITE/*]
-assign_bd_address -target_address_space /zynq_ultra_ps_e_0/Data \
-    -offset 0xA0010000 -range 4K  [get_bd_addr_segs axis_demo_0/s_axil/*]
 assign_bd_address    ;# the DMA's three masters -> HP0 DDR
 # Optional: Window > Address Editor to check; DMA spaces see HP0_DDR_LOW at 0.
 
