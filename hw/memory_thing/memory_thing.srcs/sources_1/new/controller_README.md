@@ -26,10 +26,10 @@ Design: "Matmul controller sketch" doc.
 | `level2.v` | fp32 convert, scale, accumulate over g; output FIFO |
 | `fp32_funcs.vh` | The fp32 convert/multiply/add as functions (`include`d by `level2.v`) |
 | `tile_ref.v` | Reference tile with the same ports: row 0 only (decode), 16 DSPs. Use it to bring the chain up, then swap in the systolic tile |
-| `sim/tb_axi_controller.v` | Self-checking bench: buffer model, 4 lanes with random gaps, `tile_ref` with a late `t_done`, random S2MM back-pressure, 2 calls back to back |
-| `sim/gen_vectors.py` | Test vectors from `fp8_golden.py` (real quantized data) |
-| `sim/tb_fp32.v`, `sim/gen_fp_vectors.py` | Checks the fp32 functions alone against numpy |
-| `../../app/lineartest.cpp` | Board test: random FP8 W and x, packs the lanes, runs the call, checks every output. Can also dump its data for the bench |
+| `../../sim_1/new/tb_axi_controller.v` | Self-checking bench: buffer model, 4 lanes with random gaps, `tile_ref` with a late `t_done`, random S2MM back-pressure, 2 calls back to back |
+| `../../sim_1/new/gen_vectors.py` | Test vectors from `fp8_golden.py` (real quantized data) |
+| `../../sim_1/new/tb_fp32.v`, `../../sim_1/new/gen_fp_vectors.py` | Checks the fp32 functions alone against numpy |
+| `app/lineartest.cpp` (repo root) | Board test: random FP8 W and x, packs the lanes, runs the call, checks every output. Can also dump its data for the bench |
 
 ## The tile contract
 
@@ -52,19 +52,19 @@ Your tile can replace `tile_ref` if it does this (all in `tile_ref.v`'s header t
 ## Simulate
 
 ```bash
-cd hw/controller/sim
+cd hw/memory_thing/memory_thing.srcs/sim_1/new
 python3 gen_vectors.py <path to fp8-flow> vec 128 1024      # N K
-iverilog -g2005 -I vec -I .. -o tb tb_axi_controller.v ../axi_controller.v ../tile_ref.v ../level2.v && vvp tb
+iverilog -g2005 -I vec -I ../../sources_1/new -o tb tb_axi_controller.v ../../sources_1/new/axi_controller.v ../../sources_1/new/tile_ref.v ../../sources_1/new/level2.v && vvp tb
 # PASS: 2 calls x 128 fp32 outputs (G = 8), bit-exact with golden_linear_q
 
 # the fp32 functions alone: ~700k numpy vectors
-python3 gen_fp_vectors.py fpvec && iverilog -g2005 -I .. -o tbfp tb_fp32.v && vvp tbfp +dir=fpvec
+python3 gen_fp_vectors.py fpvec && iverilog -g2005 -I ../../sources_1/new -o tbfp tb_fp32.v && vvp tbfp +dir=fpvec
 ```
 
 Or simulate exactly what the board test sends: build `lineartest` natively
-(`g++ -O2 -std=c++17 -ffp-contract=off -I../../../driver ../../../app/lineartest.cpp -o lt -pthread`),
+(`g++ -O2 -std=c++17 -ffp-contract=off -I../../../../../driver ../../../../../app/lineartest.cpp -o lt -pthread`),
 run `./lt 256 1024 1 vec`, then the same `iverilog` line. To test your own
-tile, replace `../tile_ref.v` with it and change the instance in the bench.
+tile, replace `../../sources_1/new/tile_ref.v` with it and change the instance in the bench.
 
 Passes in Icarus for (N, K) = (128, 256), (256, 128), (128, 1024), (128, 3072),
 (512, 256), and on `lineartest`'s own data (256x1024, 128x3072). With K = 3200
@@ -74,9 +74,12 @@ Passes in Icarus for (N, K) = (128, 256), (256, 128), (128, 1024), (128, 3072),
 
 Save a copy of the project first: bwtest needs lane_checker.
 
-1. Add Sources: `axi_controller.v`, `level2.v`, `fp32_funcs.vh` (same
-   folder; Vivado finds the include next to the file, or mark it Global
-   Include), `tile_ref.v` (or your tile), your `activation_buffer.v`.
+1. The RTL is already in this project's `memory_thing.srcs/sources_1/new`
+   (benches in `sim_1/new`). If Sources doesn't list `level2.v`,
+   `fp32_funcs.vh` and `tile_ref.v` yet, Add Sources > Add Files (leave
+   "Copy sources into project" off) and mark `fp32_funcs.vh` as a Verilog
+   Header (Vivado finds the include next to the file, or mark it Global
+   Include). `axi_controller.v` and `activation_buffer.v` are listed already.
    Right-click the canvas > Add Module for the controller, the tile and the
    buffer (`level2` sits inside the controller).
 2. Delete `lane_checker_1`.

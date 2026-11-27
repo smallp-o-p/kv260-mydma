@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 // tb_fp32.v - checks fp32_funcs.vh against numpy (vectors from gen_fp_vectors.py).
-//   python3 gen_fp_vectors.py fpvec && iverilog -g2005 -I .. -o tbfp tb_fp32.v && vvp tbfp +dir=fpvec
+//   python3 gen_fp_vectors.py fpvec && iverilog -g2005 -I ../../sources_1/new -o tbfp tb_fp32.v && vvp tbfp +dir=fpvec
 module tb_fp32;
     `include "fp32_funcs.vh"
     reg [1023:0] dir, path;

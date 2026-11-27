@@ -10,7 +10,7 @@
 //     * holds m_res_tready low at random and checks every output bit for bit, and TLAST
 //   It runs CALLS calls back to back to exercise rel -> IDLE -> next load.
 //
-//   iverilog -g2005 -I <vecdir> -I .. -o tb tb_axi_controller.v ../axi_controller.v ../tile_ref.v ../level2.v && vvp tb
+//   iverilog -g2005 -I <vecdir> -I ../../sources_1/new -o tb tb_axi_controller.v ../../sources_1/new/axi_controller.v ../../sources_1/new/tile_ref.v ../../sources_1/new/level2.v && vvp tb
 `include "params.vh"
 
 module lane_src #(parameter FILE = "", parameter LEN = 1) (

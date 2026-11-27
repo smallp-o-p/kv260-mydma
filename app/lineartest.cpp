@@ -1,4 +1,4 @@
-// lineartest.cpp - one LINEAR call through hw/controller, checked against a
+// lineartest.cpp - one LINEAR call through the controller (memory_thing.srcs/sources_1/new), checked against a
 // CPU reference. Decode shape: one token, y = W x.
 //
 //   tx (activations) --axi_dma_4 MM2S--> activation_buffer --+
@@ -18,7 +18,7 @@
 //         sudo ./lineartest                     # N = 1024, K = 1024
 //         sudo ./lineartest 4096 1024 5         # N, K, calls
 // Sim:    ./lineartest 256 1024 1 <dir>         # no board: writes the same data as
-//                                               # hex for hw/controller/sim/tb_axi_controller.v
+//                                               # hex for hw/memory_thing/memory_thing.srcs/sim_1/new/tb_axi_controller.v
 // Limits: N a multiple of 128 (the weight-scale block), K a multiple of 128
 //         and <= 3072, results <= 1 MiB.
 
@@ -48,7 +48,7 @@ static void die(const char *what) {
 }
 
 // E4M3 code -> value * 2^9 as an exact integer. NaN codes (0x7F, 0xFF) -> 0,
-// as in fp8_golden.E4M3_TO_INT9 and hw/controller/tile_ref.v.
+// as in fp8_golden.E4M3_TO_INT9 and hw/memory_thing/memory_thing.srcs/sources_1/new/tile_ref.v.
 static int32_t dec(uint8_t c) {
     const unsigned e = (c >> 3) & 15, m = c & 7;
     int32_t mag;
@@ -80,7 +80,7 @@ static float level2(const int64_t *iacc, const float *sa, const float *sw, unsig
     return acc;
 }
 
-// Hex files for hw/controller/sim/tb_axi_controller.v (one beat per line, byte 0 = LSB).
+// Hex files for hw/memory_thing/memory_thing.srcs/sim_1/new/tb_axi_controller.v (one beat per line, byte 0 = LSB).
 static void dump(const char *dir, const std::vector<uint8_t> *lane, uint32_t lane_bytes,
                  const std::vector<uint8_t> &tx, const std::vector<uint8_t> &expect,
                  unsigned G, unsigned N) {
