@@ -47,7 +47,7 @@ jobs:
       - name: Collect board files
         run: |
           mkdir -p out/board
-          cp driver/mydma.ko app/dmatest app/dmatest_rw app/bwtest out/board/
+          cp driver/mydma.ko app/dmatest app/dmatest_rw app/bwtest app/lineartest out/board/
           cp -r out/memory_thing out/multi_hp out/board/
 
       - uses: actions/upload-artifact@v4
