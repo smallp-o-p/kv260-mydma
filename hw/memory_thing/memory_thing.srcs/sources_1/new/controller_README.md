@@ -26,7 +26,7 @@ Design: "Matmul controller sketch" doc.
 | `level2.v` | fp32 convert, scale, accumulate over g; output FIFO |
 | `fp32_funcs.vh` | The fp32 convert/multiply/add as functions (`include`d by `level2.v`) |
 | `tile_ref.v` | Reference tile with the same ports: row 0 only (decode), 16 DSPs. Use it to bring the chain up, then swap in the systolic tile |
-| `../../sim_1/new/tb_axi_controller.v` | Self-checking bench: buffer model, 4 lanes with random gaps, `tile_ref` with `t_c` delayed 30 clocks and `TILE_LAT` = its exact latency (`-DLAT_SHORT` = one too small, must FAIL), random S2MM back-pressure, 2 calls back to back |
+| `../../sim_1/new/tb_axi_controller.v` | Self-checking bench: buffer model, 4 lanes with random gaps, `tile_ref` with `t_c` delayed 30 clocks and the controller waiting on its `t_done` (`-DDONE_EARLY=2` = done two clocks early, must FAIL), random S2MM back-pressure, 2 calls back to back |
 | `../../sim_1/new/gen_vectors.py` | Test vectors from `fp8_golden.py` (real quantized data) |
 | `../../sim_1/new/tb_fp32.v`, `../../sim_1/new/gen_fp_vectors.py` | Checks the fp32 functions alone against numpy |
 | `app/lineartest.cpp` (repo root) | Board test: random FP8 W and x, packs the lanes, runs the call, checks every output. Can also dump its data for the bench |
@@ -42,17 +42,20 @@ Your tile can replace `tile_ref` if it does this (all in `tile_ref.v`'s header t
 - `t_clear` (one clock) zeroes every sum. It comes before each group's first
   step, only while the tile is idle (no steps in flight, `t_c` already read),
   so apply it straight to the accumulators (DSP48E2: `RSTP`). No start/end
-  markers and no done signal.
+  markers.
 - Products are exact integers: decode each code to value x 2^9
   (`(8+m) << (e-1)`, or `m` when e = 0, NaN codes give 0), multiply, add into
   44-bit signed sums.
-- Fixed latency: `t_c` holds the final sums `TILE_LAT` clocks after the clock
-  edge that takes a group's last step. Set the controller's `TILE_LAT`
-  parameter to that number (`tile_ref`: 4). Too small reads unfinished sums;
-  too big only wastes clocks. Then **hold** `t_c` until `t_clear`.
+- `t_done` = 1 when no step is in flight, i.e. `t_c` includes every step
+  taken so far. It must be 0 from the clock right after the edge that takes
+  a step until that step is in `t_c` (it is also 1 while idle and after
+  `t_clear`). The controller waits for it after a group's last step, then
+  reads `t_c`, so the tile's latency can be anything, even variable. Easiest
+  way: carry a valid bit down every pipeline stage next to the data and
+  NOR them all (`tile_ref` does that). Then **hold** `t_c` until `t_clear`.
   `t_c[44c +: 44]` = row 0, column c. In an output-stationary array that is
-  just row 0's accumulators wired out, and `TILE_LAT` is the skew to PE (0,15)
-  plus the PE pipeline (`pe_mac`: 4).
+  just row 0's accumulators wired out, and the valid chain runs along the
+  skew to PE (0,15) plus the PE pipeline (`pe_mac`: 4).
 
 ## Simulate
 
@@ -94,9 +97,8 @@ Save a copy of the project first: bwtest needs lane_checker.
 6. Buffer to controller, pin to pin: `loaded`, `beat_count`, `rel`, `rd_en`,
    `rd_addr`, `rd_data`, `rd_valid`. (`beat_count` must be the number of
    words received, 9G; for K = 3072 that is 216.)
-7. Controller to tile, pin to pin: `t_valid`, `t_clear`, `t_a`, `t_b`, `t_c`.
-   Set the controller's `TILE_LAT` (Customize Block) to the tile's latency:
-   4 for `tile_ref`.
+7. Controller to tile, pin to pin: `t_valid`, `t_clear`, `t_a`, `t_b`
+   (controller -> tile) and `t_c`, `t_done` (tile -> controller).
 8. Every `aclk` to `pl_clk0`, every `aresetn` to `proc_sys_reset_0/peripheral_aresetn`.
    Leave `err` open, or put it on a System ILA.
 9. Validate, generate the bitstream, package it as before

@@ -8,7 +8,8 @@
       "pfm_name": "xilinx:kv260_som:memory_thing:0.0",
       "rev_ctrl_bd_flag": "RevCtrlBdOff",
       "synth_flow_mode": "None",
-      "tool_version": "2026.1"
+      "tool_version": "2026.1",
+      "validated": "true"
     },
     "design_tree": {
       "xlconstant_0": "",
@@ -47,7 +48,7 @@
       "axis_data_fifo_3": "",
       "activation_buffer_0": "",
       "axi_controller_0": "",
-      "tile_ref_0": ""
+      "systolic_tile_0": ""
     },
     "components": {
       "xlconstant_0": {
@@ -5836,6 +5837,14 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
+              },
+              "FREQ_HZ": {
+                "value": "249997498",
+                "value_src": "user_prop"
+              },
+              "CLK_DOMAIN": {
+                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
+                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -5901,6 +5910,14 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
+              },
+              "FREQ_HZ": {
+                "value": "249997498",
+                "value_src": "user_prop"
+              },
+              "CLK_DOMAIN": {
+                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
+                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -5966,6 +5983,14 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
+              },
+              "FREQ_HZ": {
+                "value": "249997498",
+                "value_src": "user_prop"
+              },
+              "CLK_DOMAIN": {
+                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
+                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -6031,6 +6056,14 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
+              },
+              "FREQ_HZ": {
+                "value": "249997498",
+                "value_src": "user_prop"
+              },
+              "CLK_DOMAIN": {
+                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
+                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -6096,6 +6129,14 @@
               "HAS_TLAST": {
                 "value": "1",
                 "value_src": "constant"
+              },
+              "FREQ_HZ": {
+                "value": "249997498",
+                "value_src": "user_prop"
+              },
+              "CLK_DOMAIN": {
+                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
+                "value_src": "default_prop"
               }
             },
             "port_maps": {
@@ -6138,6 +6179,14 @@
               "ASSOCIATED_RESET": {
                 "value": "aresetn",
                 "value_src": "constant"
+              },
+              "FREQ_HZ": {
+                "value": "249997498",
+                "value_src": "user_prop"
+              },
+              "CLK_DOMAIN": {
+                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
+                "value_src": "default_prop"
               }
             }
           },
@@ -6199,21 +6248,24 @@
             "left": "703",
             "right": "0"
           },
+          "t_done": {
+            "direction": "I"
+          },
           "err": {
             "direction": "O"
           }
         }
       },
-      "tile_ref_0": {
-        "vlnv": "xilinx.com:module_ref:tile_ref:1.0",
+      "systolic_tile_0": {
+        "vlnv": "xilinx.com:module_ref:systolic_tile:1.0",
         "ip_revision": "1",
-        "xci_name": "memthing_tile_ref_0_0",
-        "xci_path": "ip\\memthing_tile_ref_0_0_1\\memthing_tile_ref_0_0.xci",
-        "inst_hier_path": "tile_ref_0",
+        "xci_name": "memthing_systolic_tile_0_0",
+        "xci_path": "ip\\memthing_systolic_tile_0_0\\memthing_systolic_tile_0_0.xci",
+        "inst_hier_path": "systolic_tile_0",
         "has_run_ip_tcl": "true",
         "reference_info": {
           "ref_type": "hdl",
-          "ref_name": "tile_ref",
+          "ref_name": "systolic_tile",
           "boundary_crc": "0x0"
         },
         "ports": {
@@ -6224,6 +6276,14 @@
               "ASSOCIATED_RESET": {
                 "value": "aresetn",
                 "value_src": "constant"
+              },
+              "FREQ_HZ": {
+                "value": "249997498",
+                "value_src": "user_prop"
+              },
+              "CLK_DOMAIN": {
+                "value": "memthing_zynq_ultra_ps_e_0_0_pl_clk0",
+                "value_src": "default_prop"
               }
             }
           },
@@ -6252,6 +6312,9 @@
             "direction": "I",
             "left": "127",
             "right": "0"
+          },
+          "t_done": {
+            "direction": "O"
           },
           "t_c": {
             "direction": "O",
@@ -6507,25 +6570,25 @@
       "axi_controller_0_t_a": {
         "ports": [
           "axi_controller_0/t_a",
-          "tile_ref_0/t_a"
+          "systolic_tile_0/t_a"
         ]
       },
       "axi_controller_0_t_b": {
         "ports": [
           "axi_controller_0/t_b",
-          "tile_ref_0/t_b"
+          "systolic_tile_0/t_b"
         ]
       },
       "axi_controller_0_t_clear": {
         "ports": [
           "axi_controller_0/t_clear",
-          "tile_ref_0/t_clear"
+          "systolic_tile_0/t_clear"
         ]
       },
       "axi_controller_0_t_valid": {
         "ports": [
           "axi_controller_0/t_valid",
-          "tile_ref_0/t_valid"
+          "systolic_tile_0/t_valid"
         ]
       },
       "axi_dma_0_mm2s_introut": {
@@ -6591,13 +6654,19 @@
           "smartconnect_3/aresetn",
           "activation_buffer_0/aresetn",
           "axi_controller_0/aresetn",
-          "tile_ref_0/aresetn"
+          "systolic_tile_0/aresetn"
         ]
       },
-      "tile_ref_0_t_c": {
+      "systolic_tile_0_t_c": {
         "ports": [
-          "tile_ref_0/t_c",
+          "systolic_tile_0/t_c",
           "axi_controller_0/t_c"
+        ]
+      },
+      "systolic_tile_0_t_done": {
+        "ports": [
+          "systolic_tile_0/t_done",
+          "axi_controller_0/t_done"
         ]
       },
       "xlconcat_0_dout": {
@@ -6658,7 +6727,7 @@
           "activation_buffer_0/aclk",
           "zynq_ultra_ps_e_0/saxihpc1_fpd_aclk",
           "axi_controller_0/aclk",
-          "tile_ref_0/aclk"
+          "systolic_tile_0/aclk"
         ]
       },
       "zynq_ultra_ps_e_0_pl_resetn0": {

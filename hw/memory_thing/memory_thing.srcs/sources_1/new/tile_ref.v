@@ -17,19 +17,22 @@
 //   * Each product is exact: decode both codes to integers in units of 2^-9
 //     (so the product is in units of 2^-18) and add into 44-bit signed sums.
 //     That is fp8_golden.py's level 1, bit for bit.
-//   * The tile's latency is fixed and known: t_c holds the final sums
-//     LAT clocks after the clock edge that takes a group's last step.
-//     Set the controller's TILE_LAT to it. HOLD t_c until t_clear; the
-//     controller reads it before it clears.
+//   * t_done = 1 when no step is in flight: t_c then includes every step
+//     taken so far. It must be 0 on the clock right after the edge that
+//     takes a step (the controller looks at it from that clock on) and
+//     stay 0 until that step is in t_c. It is also 1 while idle and right
+//     after t_clear (no steps: the sums are 0). The controller waits for it
+//     after a group's last step, then reads t_c. HOLD t_c until t_clear.
 //   * t_c: column c's sum (row 0) in bits [44c +: 44].
 //
 // Pipeline (one register after each step, for 250 MHz):
 //   input regs -> decode -> pre-add (a or 2a) -> multiply -> accumulate
-// The last step is registered on edge T and its sum lands on edge T + 4, so
-// LAT = 4. Like pe_dsp48e2, the weight keeps one bit of its shift back so it
+// The last step is registered on edge T and its sum lands on edge T + 4.
+// Like pe_dsp48e2, the weight keeps one bit of its shift back so it
 // fits the DSP's 18-bit B port, and A is doubled instead (d = 1): one
 // 20 x 18 multiply per column, 16 DSPs. EXTRA_LAT delays t_c by that many
-// more clocks (LAT = 4 + EXTRA_LAT), to imitate a bigger tile in simulation.
+// more clocks, to imitate a bigger tile in simulation. t_done follows: a
+// valid bit rides along every stage (v), and t_done = no bit set.
 
 module tile_ref #(
     parameter N = 16,
@@ -40,7 +43,8 @@ module tile_ref #(
     input  wire              t_valid, t_clear,
     input  wire [8*N-1:0]    t_a,
     input  wire [8*N-1:0]    t_b,
-    output wire [N*44-1:0]   t_c
+    output wire [N*44-1:0]   t_c,
+    output wire              t_done
 );
     // Activation code -> value * 2^9 as a signed integer (fp8_golden E4M3_TO_INT9).
     // Normal: (8 + m) << (e - 1). Subnormal (e = 0): m. NaN codes 0x7F/0xFF -> 0.
@@ -70,7 +74,11 @@ module tile_ref #(
         end
     endfunction
 
-    reg [4:1]         v;                    // v[i]: stage i holds a real step (v[4]: m3)
+    // v[i]: stage i holds a step that isn't in t_c yet. v[4]: m3 (not yet
+    // in acc); v[4+j]: in acc, not yet through j of the EXTRA_LAT delays.
+    localparam NV = 4 + EXTRA_LAT;
+    reg [NV:1]        v;
+    assign t_done = ~|v;
     // ---- stage 1: input registers (t_a/t_b come straight from the controller's muxes) ----
     reg [7:0]         a0;
     reg [8*N-1:0]     b0;
@@ -89,7 +97,7 @@ module tile_ref #(
     integer c;
     always @(posedge aclk) begin
         if (!aresetn) v <= 0;
-        else          v <= {v[3:1], t_valid};
+        else          v <= {v[NV-1:1], t_valid};
 
         a0 <= t_a[7:0];
         b0 <= t_b;
